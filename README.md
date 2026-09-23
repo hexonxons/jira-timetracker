@@ -23,17 +23,21 @@
 
 ## Запуск
 
-Нужны Python 3.10+ и Node.js 20+.
+Нужны Python 3.10+ и Node.js 22.12+. Пошаговая установка для Windows, macOS и Ubuntu —
+в [docs/INSTALL.md](docs/INSTALL.md).
 
 ```bash
-./run.sh            # собирает frontend при необходимости и открывает http://127.0.0.1:8765
+./run.sh            # Linux, macOS
+run.cmd             # Windows (или двойной клик)
 ```
+
+Скрипт при первом запуске ставит зависимости, собирает интерфейс и открывает http://127.0.0.1:8765.
 
 Дальше в **Settings**:
 
 1. Jira URL и Personal Access Token (сохраняются в `~/.jira-timetracker/settings.json`; каталог меняется через `JTT_HOME`).
 2. Имя поля SD Track (по умолчанию `SD Track`, ищется по имени в `/rest/api/2/field`) и часы в человеко-дне.
-3. При корпоративном сертификате — путь к CA bundle (PEM).
+3. Корпоративный сертификат берётся из системного хранилища; если его там нет — путь к CA bundle (PEM).
 4. Загрузить JSON команд:
 
 ```json

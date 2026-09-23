@@ -4,11 +4,13 @@ from __future__ import annotations
 
 import asyncio
 import os
+import ssl
 import uuid
 from datetime import date
 from pathlib import Path
 from typing import Any
 
+import truststore
 from fastapi import Body, FastAPI, HTTPException
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
@@ -26,7 +28,10 @@ app = FastAPI(title="Jira Timetracker")
 
 
 def make_client(settings: Settings) -> JiraClient:
-    return JiraClient(settings.base_url, settings.pat, verify=settings.ca_bundle or True)
+    # Without an explicit CA bundle, trust the OS certificate store (Windows, macOS Keychain,
+    # Linux ca-certificates), so a corporate CA installed in the system just works.
+    verify: str | ssl.SSLContext = settings.ca_bundle or truststore.SSLContext(ssl.PROTOCOL_TLS_CLIENT)
+    return JiraClient(settings.base_url, settings.pat, verify=verify)
 
 
 def require_connection(settings: Settings) -> None:

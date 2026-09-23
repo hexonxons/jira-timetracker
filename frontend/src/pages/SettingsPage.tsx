@@ -86,8 +86,8 @@ export function SettingsPage({
           </label>
           <label>
             CA bundle (PEM path, optional)
-            <input value={form.caBundle} onChange={set("caBundle")} placeholder="System certificates" />
-            <small>Needed only if the Jira certificate is issued by a corporate CA unknown to Python.</small>
+            <input value={form.caBundle} onChange={set("caBundle")} placeholder="Use OS certificate store" />
+            <small>Certificates installed in the operating system are trusted already; set this only if the corporate CA is not installed there.</small>
           </label>
           <div className="actions">
             <button type="submit" className="primary" disabled={busy}>
