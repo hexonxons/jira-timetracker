@@ -1,0 +1,8 @@
+{
+  "teams": [
+    { "name": "Performance", "users": ["alice", "bob", "carol"] },
+    { "name": "Sensors", "users": ["dave", "eve"] },
+    { "name": "DevOps", "users": ["frank", "grace"] },
+    { "name": "System Development", "users": ["heidi", "ivan", "judy"] }
+  ]
+}
