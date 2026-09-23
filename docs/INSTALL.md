@@ -18,11 +18,11 @@
 ## Скачать код
 
 ```bash
-git clone -b claude/jira-time-tracking-reports-jcybv8 https://github.com/hexonxons/jira-timetracker.git
+git clone https://github.com/hexonxons/jira-timetracker.git
 cd jira-timetracker
 ```
 
-Когда ветка будет влита в основную, `-b ...` можно убрать. Без Git: на GitHub выберите ветку →
+Клонируется ветка `dev` — основная ветка репозитория. Без Git: на странице репозитория на GitHub
 **Code → Download ZIP** и распакуйте архив.
 
 ---
