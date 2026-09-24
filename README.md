@@ -13,7 +13,7 @@ Docker-контейнером в облаке или на внутреннем �
 | People / Issues | Team → Employee → Issue | задачи и worklogs за день |
 | People / Tracks | Team → Employee → SD Track → Issue | задачи и worklogs |
 | Teams / Tracks | Team → SD Track → Employee → Issue | сотрудники → задачи → worklogs |
-| Summary | Team × Track, Employee × Track, итоги по командам, сотрудникам и трекам; Hours / Person-days | по дням или по сотрудникам → задачи → worklogs |
+| Summary | матрица Team × SD Track и итоги по трекам; Hours / Person-days | по дням или по сотрудникам → задачи → worklogs |
 
 - Колонки — дни периода (до 31 дня). Суббота и воскресенье скрыты, но появляются (затенёнными), если в них есть
   списанное время.

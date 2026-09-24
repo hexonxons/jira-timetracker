@@ -1,5 +1,5 @@
 import { useCallback, useMemo, useState, type ReactNode } from "react";
-import { compareMembers, compareTracks, groupBy, sumSeconds, tracksOf, type Entry } from "../lib/aggregate";
+import { compareTracks, groupBy, sumSeconds, tracksOf, type Entry } from "../lib/aggregate";
 import { formatDuration, formatPercent, formatValue, type Unit } from "../lib/format";
 import type { Dataset } from "../types";
 import { DrillPanel, type DrillTarget } from "../components/DrillPanel";
@@ -23,12 +23,7 @@ export function SummaryPage({
 
   const tracks = useMemo(() => tracksOf(entries), [entries]);
   const byTeam = useMemo(() => groupBy(entries, (e) => e.team), [entries]);
-  const byMember = useMemo(() => groupBy(entries, (e) => e.member.username), [entries]);
   const byTrack = useMemo(() => groupBy(entries, (e) => e.track), [entries]);
-  const members = useMemo(
-    () => dataset.teams.flatMap((t) => [...t.members].sort(compareMembers).map((m) => ({ team: t.name, member: m }))),
-    [dataset],
-  );
   const total = sumSeconds(entries);
   const fmt = (s: number) => formatValue(s, unit, hpd);
 
@@ -89,113 +84,6 @@ export function SummaryPage({
                 {num(entries, [], true)}
               </tr>
             </tfoot>
-          </table>
-        </Section>
-
-        <Section title="Employee × SD Track">
-          <table className="matrix">
-            <thead>
-              <tr>
-                <th className="sticky-col">Employee</th>
-                <th className="left">Team</th>
-                {tracks.map((t) => (
-                  <th key={t}>{t}</th>
-                ))}
-                <th className="total-col">Total</th>
-              </tr>
-            </thead>
-            <tbody>
-              {members.map(({ team, member }) => {
-                const list = byMember.get(member.username) ?? [];
-                return (
-                  <tr key={member.username} className={list.length ? "" : "empty-row"}>
-                    <th className="sticky-col">{member.displayName}</th>
-                    <td className="muted">{team}</td>
-                    {trackCells(list, [member.displayName])}
-                    {num(list, [member.displayName], true)}
-                  </tr>
-                );
-              })}
-            </tbody>
-          </table>
-        </Section>
-
-        <Section title="Team totals">
-          <table className="matrix">
-            <thead>
-              <tr>
-                <th className="sticky-col">Team</th>
-                <th>Total hours</th>
-                <th>Person-days</th>
-                <th>Members</th>
-                <th>With worklogs</th>
-                <th>Days with worklogs</th>
-                <th className="left">By SD Track</th>
-              </tr>
-            </thead>
-            <tbody>
-              {dataset.teams.map((t) => {
-                const list = byTeam.get(t.name) ?? [];
-                const s = sumSeconds(list);
-                return (
-                  <tr key={t.name}>
-                    <th className="sticky-col">{t.name}</th>
-                    <FixedNum list={list} path={[t.name]} text={formatDuration(s)} onOpen={setDrill} />
-                    <FixedNum list={list} path={[t.name]} text={formatValue(s, "personDays", hpd)} onOpen={setDrill} />
-                    <td className="num">{t.members.length}</td>
-                    <td className="num">{new Set(list.map((e) => e.member.username)).size}</td>
-                    <td className="num">{new Set(list.map((e) => e.date)).size}</td>
-                    <td>
-                      <Distribution list={list} keyOf={(e) => e.track} fmt={fmt} path={[t.name]} onOpen={setDrill} />
-                    </td>
-                  </tr>
-                );
-              })}
-            </tbody>
-          </table>
-        </Section>
-
-        <Section title="Employee totals">
-          <table className="matrix">
-            <thead>
-              <tr>
-                <th className="sticky-col">Employee</th>
-                <th className="left">Team</th>
-                <th>Total hours</th>
-                <th>Person-days</th>
-                <th>Days with worklogs</th>
-                <th className="left">By SD Track</th>
-              </tr>
-            </thead>
-            <tbody>
-              {members.map(({ team, member }) => {
-                const list = byMember.get(member.username) ?? [];
-                const s = sumSeconds(list);
-                return (
-                  <tr key={member.username} className={list.length ? "" : "empty-row"}>
-                    <th className="sticky-col">{member.displayName}</th>
-                    <td className="muted">{team}</td>
-                    <FixedNum list={list} path={[member.displayName]} text={formatDuration(s)} onOpen={setDrill} />
-                    <FixedNum
-                      list={list}
-                      path={[member.displayName]}
-                      text={formatValue(s, "personDays", hpd)}
-                      onOpen={setDrill}
-                    />
-                    <td className="num">{new Set(list.map((e) => e.date)).size || ""}</td>
-                    <td>
-                      <Distribution
-                        list={list}
-                        keyOf={(e) => e.track}
-                        fmt={fmt}
-                        path={[member.displayName]}
-                        onOpen={setDrill}
-                      />
-                    </td>
-                  </tr>
-                );
-              })}
-            </tbody>
           </table>
         </Section>
 
