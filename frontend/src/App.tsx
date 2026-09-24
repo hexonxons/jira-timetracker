@@ -4,6 +4,7 @@ import { CalendarReport } from "./components/CalendarReport";
 import { ErrorList } from "./components/ErrorList";
 import { enrich, type Dim } from "./lib/aggregate";
 import { visibleDays } from "./lib/calendar";
+import { loadOwnTeams, saveOwnTeams } from "./lib/teamsStore";
 import { SettingsPage } from "./pages/SettingsPage";
 import { SummaryPage } from "./pages/SummaryPage";
 import type { Dataset } from "./types";
@@ -63,6 +64,11 @@ export function App() {
   const [job, setJob] = useState<ReportJob | null>(null);
   const [errors, setErrors] = useState<string[]>([]);
   const [dataset, setDataset] = useState<Dataset | null>(null);
+  const [ownTeams, setOwnTeams] = useState<unknown | null>(loadOwnTeams);
+  const updateOwnTeams = (config: unknown | null) => {
+    setOwnTeams(config);
+    saveOwnTeams(config);
+  };
   const poll = useRef<number | undefined>(undefined);
 
   useEffect(() => {
@@ -82,7 +88,7 @@ export function App() {
     setErrors([]);
     window.clearTimeout(poll.current);
     try {
-      const { id } = await api.startReport(period.start, period.end);
+      const { id } = await api.startReport(period.start, period.end, settings?.managed ? ownTeams : undefined);
       const tick = async () => {
         try {
           const j = await api.getReport(id);
@@ -110,7 +116,8 @@ export function App() {
   const hpd = settings?.hoursPerPersonDay ?? dataset?.meta.hoursPerPersonDay ?? 8;
   const running = job?.status === "running";
   const view = PAGES[page];
-  const needsSetup = settings && (!settings.jiraUrl || !settings.hasPat || !settings.teamsConfig);
+  const hasTeams = Boolean(settings?.teamsConfig || (settings?.managed && ownTeams));
+  const needsSetup = settings && (!settings.jiraUrl || !settings.hasPat || !hasTeams || settings.configErrors.length > 0);
 
   return (
     <div className="app">
@@ -161,15 +168,29 @@ export function App() {
         {view.kind !== "settings" && (
           <>
             <ErrorList errors={errors} title="The report could not be built:" />
-            {needsSetup && (
-              <div className="alert">
-                Set the Jira URL, token and team config in <a href="#/settings">Settings</a> first.
-              </div>
-            )}
+            {needsSetup &&
+              (settings.managed ? (
+                settings.configErrors.length ? (
+                  <ErrorList
+                    errors={settings.configErrors}
+                    title="This instance is misconfigured; ask its administrator to fix:"
+                  />
+                ) : (
+                  <div className="alert">
+                    Upload a team config in <a href="#/settings">Settings</a> first.
+                  </div>
+                )
+              ) : (
+                <div className="alert">
+                  Set the Jira URL, token and team config in <a href="#/settings">Settings</a> first.
+                </div>
+              ))}
           </>
         )}
 
-        {view.kind === "settings" && settings && <SettingsPage settings={settings} onSaved={setSettings} />}
+        {view.kind === "settings" && settings && (
+          <SettingsPage settings={settings} onSaved={setSettings} ownTeams={ownTeams} onOwnTeams={updateOwnTeams} />
+        )}
 
         {view.kind !== "settings" && dataset && (
           <>

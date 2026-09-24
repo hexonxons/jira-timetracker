@@ -1,0 +1,26 @@
+# docker compose -f deploy/docker-compose.yml up -d --build
+# Put the token into deploy/jira-pat.txt and the default team config into deploy/teams.json first.
+services:
+  jtt:
+    build: ..
+    image: jira-timetracker:latest
+    restart: unless-stopped
+    ports:
+      - "8080:8080"
+    environment:
+      JTT_JIRA_URL: https://jira.example.com
+      JTT_JIRA_PAT_FILE: /run/secrets/jira_pat
+      JTT_TEAMS_FILE: /config/teams.json
+      # JTT_SD_TRACK_FIELD_NAME: SD Track
+      # JTT_HOURS_PER_PERSON_DAY: "8"
+      # JTT_CA_BUNDLE: /config/corp-ca.pem
+      # JTT_MAX_PARALLEL_REPORTS: "3"
+      # JTT_REPORT_CACHE_SECONDS: "0"
+    volumes:
+      - ./teams.json:/config/teams.json:ro
+    secrets:
+      - jira_pat
+
+secrets:
+  jira_pat:
+    file: ./jira-pat.txt

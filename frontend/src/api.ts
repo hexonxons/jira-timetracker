@@ -26,6 +26,9 @@ async function call<T>(method: string, url: string, body?: unknown): Promise<T> 
 }
 
 export interface PublicSettings {
+  /** Service instance: configured by its environment, read-only in the UI. */
+  managed: boolean;
+  configErrors: string[];
   jiraUrl: string;
   hasPat: boolean;
   sdTrackFieldName: string;
@@ -40,6 +43,10 @@ export interface SettingsUpdate {
   sdTrackFieldName?: string;
   hoursPerPersonDay?: number;
   caBundle?: string;
+}
+
+export interface TeamsSummary {
+  teams: { name: string; users: string[] }[];
 }
 
 export interface ConnectionInfo {
@@ -60,7 +67,9 @@ export const api = {
   getSettings: () => call<PublicSettings>("GET", "/api/settings"),
   saveSettings: (update: SettingsUpdate) => call<PublicSettings>("PUT", "/api/settings", update),
   testConnection: () => call<ConnectionInfo>("POST", "/api/settings/test"),
-  uploadTeams: (config: unknown) => call<{ teams: { name: string; users: string[] }[] }>("PUT", "/api/teams", config),
-  startReport: (start: string, end: string) => call<{ id: string }>("POST", "/api/reports", { start, end }),
+  uploadTeams: (config: unknown) => call<TeamsSummary>("PUT", "/api/teams", config),
+  validateTeams: (config: unknown) => call<TeamsSummary>("POST", "/api/teams/validate", config),
+  startReport: (start: string, end: string, teams?: unknown) =>
+    call<{ id: string }>("POST", "/api/reports", { start, end, teams: teams ?? null }),
   getReport: (id: string) => call<ReportJob>("GET", `/api/reports/${id}`),
 };

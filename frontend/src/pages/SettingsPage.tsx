@@ -2,31 +2,34 @@ import { useState, type ChangeEvent, type FormEvent } from "react";
 import { api, ApiError, type ConnectionInfo, type PublicSettings } from "../api";
 import { ErrorList } from "../components/ErrorList";
 
+type TeamsConfig = { teams?: { name: string; users: string[] }[] } | null;
+
 export function SettingsPage({
   settings,
   onSaved,
+  ownTeams,
+  onOwnTeams,
 }: {
   settings: PublicSettings;
   onSaved: (s: PublicSettings) => void;
+  /** Service mode: the team config uploaded in this browser (overrides the instance default). */
+  ownTeams: unknown | null;
+  onOwnTeams: (config: unknown | null) => void;
 }) {
-  const [form, setForm] = useState({
-    jiraUrl: settings.jiraUrl,
-    pat: "",
-    sdTrackFieldName: settings.sdTrackFieldName,
-    hoursPerPersonDay: String(settings.hoursPerPersonDay),
-    caBundle: settings.caBundle,
-  });
+  return (
+    <div className="page settings">
+      {settings.managed ? <ManagedConnectionCard settings={settings} /> : <ConnectionCard settings={settings} onSaved={onSaved} />}
+      <TeamsCard settings={settings} onSaved={onSaved} ownTeams={ownTeams} onOwnTeams={onOwnTeams} />
+    </div>
+  );
+}
+
+function useAction() {
   const [errors, setErrors] = useState<string[]>([]);
-  const [message, setMessage] = useState("");
-  const [connection, setConnection] = useState<ConnectionInfo | null>(null);
   const [busy, setBusy] = useState(false);
-
-  const set = (k: keyof typeof form) => (e: ChangeEvent<HTMLInputElement>) => setForm({ ...form, [k]: e.target.value });
-
   async function run(action: () => Promise<void>) {
     setBusy(true);
     setErrors([]);
-    setMessage("");
     try {
       await action();
     } catch (e) {
@@ -35,9 +38,81 @@ export function SettingsPage({
       setBusy(false);
     }
   }
+  return { errors, setErrors, busy, run };
+}
+
+function TestConnection({ disabled }: { disabled?: boolean }) {
+  const { errors, busy, run } = useAction();
+  const [connection, setConnection] = useState<ConnectionInfo | null>(null);
+  const test = () =>
+    run(async () => {
+      setConnection(null);
+      setConnection(await api.testConnection());
+    });
+  return (
+    <>
+      <button type="button" onClick={test} disabled={busy || disabled}>
+        Test connection
+      </button>
+      {connection && (
+        <div className="alert alert-ok">
+          Connected as <strong>{connection.user}</strong>
+          {connection.timeZone ? ` (time zone ${connection.timeZone})` : ""}. SD Track field:{" "}
+          <code>{connection.sdTrackField.id}</code>.
+        </div>
+      )}
+      <ErrorList errors={errors} />
+    </>
+  );
+}
+
+function ManagedConnectionCard({ settings }: { settings: PublicSettings }) {
+  return (
+    <section className="card">
+      <h2>Jira connection</h2>
+      <p className="muted">This instance is configured by its administrator and uses a shared access token.</p>
+      <dl className="facts">
+        <dt>Jira</dt>
+        <dd>
+          {settings.jiraUrl ? (
+            <a href={settings.jiraUrl} target="_blank" rel="noreferrer">
+              {settings.jiraUrl}
+            </a>
+          ) : (
+            "—"
+          )}
+        </dd>
+        <dt>Access token</dt>
+        <dd>{settings.hasPat ? "configured" : "missing"}</dd>
+        <dt>SD Track field</dt>
+        <dd>{settings.sdTrackFieldName}</dd>
+        <dt>Person-day</dt>
+        <dd>{settings.hoursPerPersonDay}h</dd>
+      </dl>
+      <ErrorList errors={settings.configErrors} title="Instance configuration problems:" />
+      <div className="actions">
+        <TestConnection disabled={settings.configErrors.length > 0} />
+      </div>
+    </section>
+  );
+}
+
+function ConnectionCard({ settings, onSaved }: { settings: PublicSettings; onSaved: (s: PublicSettings) => void }) {
+  const [form, setForm] = useState({
+    jiraUrl: settings.jiraUrl,
+    pat: "",
+    sdTrackFieldName: settings.sdTrackFieldName,
+    hoursPerPersonDay: String(settings.hoursPerPersonDay),
+    caBundle: settings.caBundle,
+  });
+  const [message, setMessage] = useState("");
+  const { errors, busy, run } = useAction();
+
+  const set = (k: keyof typeof form) => (e: ChangeEvent<HTMLInputElement>) => setForm({ ...form, [k]: e.target.value });
 
   const save = (e: FormEvent) => {
     e.preventDefault();
+    setMessage("");
     return run(async () => {
       const saved = await api.saveSettings({
         ...form,
@@ -50,73 +125,66 @@ export function SettingsPage({
     });
   };
 
-  const test = () =>
-    run(async () => {
-      setConnection(null);
-      setConnection(await api.testConnection());
-    });
-
   return (
-    <div className="page settings">
-      <section className="card">
-        <h2>Jira connection</h2>
-        <form onSubmit={save} className="form">
-          <label>
-            Jira URL
-            <input value={form.jiraUrl} onChange={set("jiraUrl")} placeholder="https://jira.example.com" />
-          </label>
-          <label>
-            Personal Access Token
-            <input
-              type="password"
-              value={form.pat}
-              onChange={set("pat")}
-              placeholder={settings.hasPat ? "Stored. Type a new one to replace it" : "Paste your PAT"}
-              autoComplete="off"
-            />
-          </label>
-          <label>
-            SD Track field name
-            <input value={form.sdTrackFieldName} onChange={set("sdTrackFieldName")} />
-            <small>Looked up by name in Jira fields.</small>
-          </label>
-          <label>
-            Hours per person-day
-            <input type="number" min="0.5" max="24" step="0.5" value={form.hoursPerPersonDay} onChange={set("hoursPerPersonDay")} />
-          </label>
-          <label>
-            CA bundle (PEM path, optional)
-            <input value={form.caBundle} onChange={set("caBundle")} placeholder="Use OS certificate store" />
-            <small>Certificates installed in the operating system are trusted already; set this only if the corporate CA is not installed there.</small>
-          </label>
-          <div className="actions">
-            <button type="submit" className="primary" disabled={busy}>
-              Save
-            </button>
-            <button type="button" onClick={test} disabled={busy}>
-              Test connection
-            </button>
-            {message && <span className="ok">{message}</span>}
-          </div>
-        </form>
-        {connection && (
-          <div className="alert alert-ok">
-            Connected as <strong>{connection.user}</strong>
-            {connection.timeZone ? ` (time zone ${connection.timeZone})` : ""}. SD Track field:{" "}
-            <code>{connection.sdTrackField.id}</code>.
-          </div>
-        )}
-        <ErrorList errors={errors} />
-      </section>
-      <TeamsCard settings={settings} onSaved={onSaved} />
-    </div>
+    <section className="card">
+      <h2>Jira connection</h2>
+      <form onSubmit={save} className="form">
+        <label>
+          Jira URL
+          <input value={form.jiraUrl} onChange={set("jiraUrl")} placeholder="https://jira.example.com" />
+        </label>
+        <label>
+          Personal Access Token
+          <input
+            type="password"
+            value={form.pat}
+            onChange={set("pat")}
+            placeholder={settings.hasPat ? "Stored. Type a new one to replace it" : "Paste your PAT"}
+            autoComplete="off"
+          />
+        </label>
+        <label>
+          SD Track field name
+          <input value={form.sdTrackFieldName} onChange={set("sdTrackFieldName")} />
+          <small>Looked up by name in Jira fields.</small>
+        </label>
+        <label>
+          Hours per person-day
+          <input type="number" min="0.5" max="24" step="0.5" value={form.hoursPerPersonDay} onChange={set("hoursPerPersonDay")} />
+        </label>
+        <label>
+          CA bundle (PEM path, optional)
+          <input value={form.caBundle} onChange={set("caBundle")} placeholder="Use OS certificate store" />
+          <small>Certificates installed in the operating system are trusted already; set this only if the corporate CA is not installed there.</small>
+        </label>
+        <div className="actions">
+          <button type="submit" className="primary" disabled={busy}>
+            Save
+          </button>
+          <TestConnection />
+          {message && <span className="ok">{message}</span>}
+        </div>
+      </form>
+      <ErrorList errors={errors} />
+    </section>
   );
 }
 
-function TeamsCard({ settings, onSaved }: { settings: PublicSettings; onSaved: (s: PublicSettings) => void }) {
+function TeamsCard({
+  settings,
+  onSaved,
+  ownTeams,
+  onOwnTeams,
+}: {
+  settings: PublicSettings;
+  onSaved: (s: PublicSettings) => void;
+  ownTeams: unknown | null;
+  onOwnTeams: (config: unknown | null) => void;
+}) {
   const [errors, setErrors] = useState<string[]>([]);
   const [message, setMessage] = useState("");
-  const teams = (settings.teamsConfig as { teams?: { name: string; users: string[] }[] } | null)?.teams;
+  const usingOwn = settings.managed && ownTeams !== null;
+  const teams = ((usingOwn ? ownTeams : settings.teamsConfig) as TeamsConfig)?.teams;
 
   async function upload(e: ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0];
@@ -132,8 +200,13 @@ function TeamsCard({ settings, onSaved }: { settings: PublicSettings; onSaved: (
       return;
     }
     try {
-      await api.uploadTeams(parsed);
-      onSaved(await api.getSettings());
+      if (settings.managed) {
+        await api.validateTeams(parsed);
+        onOwnTeams(parsed);
+      } else {
+        await api.uploadTeams(parsed);
+        onSaved(await api.getSettings());
+      }
       setMessage(`Loaded ${file.name}.`);
     } catch (err) {
       setErrors(err instanceof ApiError ? err.errors : [String(err)]);
@@ -147,11 +220,30 @@ function TeamsCard({ settings, onSaved }: { settings: PublicSettings; onSaved: (
         JSON with <code>{'{"teams": [{"name": "...", "users": ["jira.username", ...]}]}'}</code>. Each user must belong
         to exactly one team; people not listed are excluded from reports.
       </p>
+      {settings.managed && (
+        <p className="muted">
+          {usingOwn
+            ? "Using your own config. It is kept in this browser only and sent with each report request."
+            : settings.teamsConfig
+              ? "Using the instance default config. Upload your own to override it in this browser."
+              : "This instance has no default config: upload yours. It is kept in this browser only."}
+        </p>
+      )}
       <div className="actions">
         <label className="button primary">
           Upload JSON…
           <input type="file" accept=".json,application/json" onChange={upload} hidden />
         </label>
+        {usingOwn && (
+          <button
+            onClick={() => {
+              onOwnTeams(null);
+              setMessage("");
+            }}
+          >
+            {settings.teamsConfig ? "Use instance default" : "Forget my config"}
+          </button>
+        )}
         {message && <span className="ok">{message}</span>}
       </div>
       <ErrorList errors={errors} title="The config was rejected:" />

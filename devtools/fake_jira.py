@@ -6,6 +6,7 @@
 
 from __future__ import annotations
 
+import os
 import random
 import re
 from datetime import date, datetime, timedelta
@@ -131,4 +132,4 @@ def worklog(key: str, startAt: int = 0, maxResults: int = 1000, authorization: s
 
 if __name__ == "__main__":
     print("Fake Jira on http://127.0.0.1:8900 (generated at", datetime.now().isoformat(timespec="seconds"), ")")
-    uvicorn.run(app, host="127.0.0.1", port=8900, log_level="warning")
+    uvicorn.run(app, host=os.environ.get("FAKE_JIRA_HOST", "127.0.0.1"), port=8900, log_level="warning")

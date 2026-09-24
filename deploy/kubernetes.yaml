@@ -1,0 +1,77 @@
+# kubectl apply -f deploy/kubernetes.yaml   (edit the image, Jira URL, token and teams first)
+# Exactly one replica: report jobs are kept in the pod's memory.
+apiVersion: v1
+kind: Secret
+metadata:
+  name: jira-timetracker
+type: Opaque
+stringData:
+  jira-pat: "REPLACE_WITH_PAT"
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: jira-timetracker-teams
+data:
+  teams.json: |
+    {
+      "teams": [
+        { "name": "Sensors", "users": ["user4", "user5"] }
+      ]
+    }
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: jira-timetracker
+spec:
+  replicas: 1
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels: { app: jira-timetracker }
+  template:
+    metadata:
+      labels: { app: jira-timetracker }
+    spec:
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 10001
+      containers:
+        - name: app
+          image: registry.example.com/jira-timetracker:latest
+          ports:
+            - containerPort: 8080
+          env:
+            - { name: JTT_JIRA_URL, value: "https://jira.example.com" }
+            - { name: JTT_JIRA_PAT_FILE, value: /secrets/jira-pat }
+            - { name: JTT_TEAMS_FILE, value: /config/teams.json }
+          volumeMounts:
+            - { name: secrets, mountPath: /secrets, readOnly: true }
+            - { name: teams, mountPath: /config, readOnly: true }
+          readinessProbe:
+            httpGet: { path: /healthz, port: 8080 }
+          livenessProbe:
+            httpGet: { path: /healthz, port: 8080 }
+            periodSeconds: 30
+          resources:
+            requests: { cpu: 100m, memory: 256Mi }
+            limits: { memory: 1Gi }
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+      volumes:
+        - name: secrets
+          secret: { secretName: jira-timetracker }
+        - name: teams
+          configMap: { name: jira-timetracker-teams }
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: jira-timetracker
+spec:
+  selector: { app: jira-timetracker }
+  ports:
+    - port: 80
+      targetPort: 8080
