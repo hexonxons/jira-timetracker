@@ -18,7 +18,6 @@ FROM python:3.12-slim
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
     JTT_FRONTEND_DIST=/app/frontend/dist \
-    JTT_HOST=0.0.0.0 \
     PORT=8080
 WORKDIR /app
 COPY backend/pyproject.toml /app/backend/pyproject.toml
@@ -32,4 +31,4 @@ USER 10001
 EXPOSE 8080
 HEALTHCHECK --interval=30s --timeout=3s --start-period=10s \
   CMD python -c "import os, urllib.request; urllib.request.urlopen(f'http://127.0.0.1:{os.environ[\"PORT\"]}/healthz', timeout=2)"
-CMD ["python", "-m", "jtt", "--no-browser"]
+CMD ["python", "-m", "jtt"]

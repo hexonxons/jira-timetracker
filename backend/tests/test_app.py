@@ -10,22 +10,11 @@ TEAMS = {"teams": [{"name": "Sensors", "users": ["alice"]}]}
 
 
 @pytest.fixture
-def local(monkeypatch, tmp_path):
-    monkeypatch.delenv("JTT_JIRA_URL", raising=False)
-    monkeypatch.setenv("JTT_HOME", str(tmp_path))
-    from jtt.app import app
-
-    with TestClient(app) as client:
-        yield client
-
-
-@pytest.fixture
 def service(monkeypatch, tmp_path):
     teams_file = tmp_path / "teams.json"
     teams_file.write_text(json.dumps(TEAMS))
     pat_file = tmp_path / "pat"
     pat_file.write_text("secret-pat\n")
-    monkeypatch.setenv("JTT_HOME", str(tmp_path / "home"))
     monkeypatch.setenv("JTT_JIRA_URL", BASE)
     monkeypatch.setenv("JTT_JIRA_PAT_FILE", str(pat_file))
     monkeypatch.setenv("JTT_TEAMS_FILE", str(teams_file))
@@ -36,31 +25,22 @@ def service(monkeypatch, tmp_path):
         yield client
 
 
-def test_local_mode_settings_roundtrip(local):
-    r = local.put("/api/settings", json={"jiraUrl": BASE, "pat": "tok"})
-    assert r.status_code == 200
-    assert r.json()["managed"] is False and r.json()["hasPat"] is True
-    assert "tok" not in r.text
-    assert local.put("/api/teams", json=TEAMS).status_code == 200
-    assert local.get("/api/settings").json()["teamsConfig"] == TEAMS
-
-
-def test_service_mode_reads_environment_and_hides_token(service):
+def test_reads_environment_and_hides_token(service):
     s = service.get("/api/settings").json()
-    assert s["managed"] is True and s["configErrors"] == []
+    assert s["configErrors"] == []
     assert s["jiraUrl"] == BASE and s["hasPat"] is True and s["hoursPerPersonDay"] == 7.5
     assert s["teamsConfig"] == TEAMS
     assert "secret-pat" not in json.dumps(s)
     assert service.get("/healthz").json()["status"] == "ok"
 
 
-def test_service_mode_refuses_changes(service):
-    assert service.put("/api/settings", json={"jiraUrl": "https://evil.example"}).status_code == 403
-    assert service.put("/api/teams", json=TEAMS).status_code == 403
+def test_settings_cannot_be_changed_from_the_browser(service):
+    assert service.put("/api/settings", json={"jiraUrl": "https://evil.example"}).status_code == 405
+    assert service.put("/api/teams", json=TEAMS).status_code == 405
     assert service.get("/api/settings").json()["jiraUrl"] == BASE
 
 
-def test_service_mode_reports_config_errors(monkeypatch, tmp_path):
+def test_reports_config_errors(monkeypatch, tmp_path):
     monkeypatch.setenv("JTT_JIRA_URL", "jira.test")
     monkeypatch.delenv("JTT_JIRA_PAT", raising=False)
     monkeypatch.delenv("JTT_JIRA_PAT_FILE", raising=False)
@@ -70,8 +50,20 @@ def test_service_mode_reports_config_errors(monkeypatch, tmp_path):
     with TestClient(app) as client:
         errors = client.get("/api/settings").json()["configErrors"]
         assert len(errors) == 3
+        assert client.get("/healthz").json()["configErrors"] == errors
         r = client.post("/api/reports", json={"start": "2026-09-01", "end": "2026-09-30"})
         assert r.status_code == 400
+
+
+def test_missing_jira_url_is_a_config_error(monkeypatch):
+    for name in ("JTT_JIRA_URL", "JTT_JIRA_PAT", "JTT_JIRA_PAT_FILE", "JTT_TEAMS_FILE", "JTT_TEAMS_JSON"):
+        monkeypatch.delenv(name, raising=False)
+    from jtt.settings import load_settings
+
+    assert load_settings().config_errors == [
+        "JTT_JIRA_URL is not set.",
+        "JTT_JIRA_PAT (or JTT_JIRA_PAT_FILE) is not set.",
+    ]
 
 
 def test_validate_teams_does_not_store(service):

@@ -1,6 +1,7 @@
 # Jira Time Reports
 
-Локальное приложение для Tempo-подобных отчётов по списанному времени в Jira Data Center.
+Веб-сервис для Tempo-подобных отчётов по списанному времени в Jira Data Center. Разворачивается одним
+Docker-контейнером в облаке или на внутреннем сервере; пользователи работают через браузер.
 
 Команда сотрудника берётся **только** из JSON-конфигурации команд, работа классифицируется по полю **SD Track**
 (Jira Components не используются). Любая цифра раскрывается кликом до сотрудников, задач и отдельных worklogs.
@@ -14,49 +15,31 @@
 | Teams / Tracks | Team → SD Track → Employee → Issue | сотрудники → задачи → worklogs |
 | Summary | Team × Track, Employee × Track, итоги по командам, сотрудникам и трекам; Hours / Person-days | по дням или по сотрудникам → задачи → worklogs |
 
-- Колонки — дни периода. Суббота и воскресенье скрыты, но появляются (затенёнными), если в них есть списанное время.
-- Время показывается как `7h 30m`, пустые ячейки пустые. Человеко-дни = часы / «Hours per person-day» (по умолчанию 8).
+- Колонки — дни периода (до 31 дня). Суббота и воскресенье скрыты, но появляются (затенёнными), если в них есть
+  списанное время.
+- Время показывается как `7h 30m`, пустые ячейки пустые. Человеко-дни = часы / часы в человеко-дне (по умолчанию 8).
 - Все сотрудники из конфигурации видны, даже без worklogs. Задачи без SD Track попадают в `<no SD Track>`.
 - SD Track берётся по **текущему** значению задачи; дата worklog — дата его `started` в таймзоне владельца PAT.
 - Отчёт строится только целиком: если конфигурация некорректна, пользователь не найден в Jira или часть данных не
   загрузилась, выводится список ошибок.
 
-## Режимы работы
+## Развёртывание
 
-- **Локально** — приложение на своём компьютере, URL Jira, PAT и команды задаются в Settings. Ниже и в
-  [docs/INSTALL.md](docs/INSTALL.md).
-- **Сервис** — Docker-контейнер для облака или внутреннего сервера, общий PAT и настройки задаются
-  конфигурацией инстанса (переменными окружения), пользователи работают через браузер без установки.
-  См. [docs/DEPLOY.md](docs/DEPLOY.md).
-
-## Запуск локально
-
-Нужны Python 3.10+ и Node.js 22.12+. Пошаговая установка для Windows, macOS и Ubuntu —
-в [docs/INSTALL.md](docs/INSTALL.md).
+Jira URL и общий Personal Access Token задаются конфигурацией инстанса (переменными окружения). Конфигурацию
+команд по умолчанию задаёт администратор; каждый пользователь может загрузить свою — она хранится в его браузере.
 
 ```bash
-./run.sh            # Linux, macOS
-run.cmd             # Windows (или двойной клик)
+docker build -t jira-timetracker .
+docker run -p 8080:8080 -e JTT_JIRA_URL=https://jira.company.com -e JTT_JIRA_PAT=... jira-timetracker
 ```
 
-Скрипт при первом запуске ставит зависимости, собирает интерфейс и открывает http://127.0.0.1:8765.
-
-Дальше в **Settings**:
-
-1. Jira URL и Personal Access Token (сохраняются в `~/.jira-timetracker/settings.json`; каталог меняется через `JTT_HOME`).
-2. Имя поля SD Track (по умолчанию `SD Track`, ищется по имени в `/rest/api/2/field`) и часы в человеко-дне.
-3. Корпоративный сертификат берётся из системного хранилища; если его там нет — путь к CA bundle (PEM).
-4. Загрузить JSON команд:
-
-```json
-{ "teams": [ { "name": "Sensors", "users": ["user4", "user5"] } ] }
-```
-
-Затем на любой странице отчёта выбрать период (до 31 дня) и нажать **Generate**.
+Подробно — сборка за корпоративным прокси, все переменные, Docker Compose, Kubernetes, требования к облачной
+платформе и безопасность: [docs/DEPLOY.md](docs/DEPLOY.md).
 
 ## Как загружаются данные
 
-1. `GET /rest/api/2/myself`, поиск поля SD Track, `GET /rest/api/2/user` для каждого пользователя из конфигурации.
+1. `GET /rest/api/2/myself`, поиск поля SD Track по имени, `GET /rest/api/2/user` для каждого пользователя из
+   конфигурации.
 2. `POST /rest/api/2/search` с JQL `worklogAuthor in (...) AND worklogDate >= ... AND worklogDate <= ...`
    (пользователи пачками по 50, постранично).
 3. `GET /rest/api/2/issue/{key}/worklog` для каждой найденной задачи (до 8 параллельно, постранично), затем отбор
@@ -68,15 +51,19 @@ Backend (`backend/jtt`) отдаёт плоский датасет, все аг�
 
 ## Разработка
 
+Нужны Python 3.10+ и Node.js 22.12+.
+
 ```bash
-# backend
+# backend: тесты
 cd backend && python3 -m venv .venv && .venv/bin/pip install -e '.[dev]' && .venv/bin/pytest
-# frontend
+# frontend: тесты и сборка
 cd frontend && npm ci && npm test && npm run build
 
-# фейковая Jira DC со сгенерированными данными: http://127.0.0.1:8900, любой PAT,
-# конфигурация команд — devtools/sample-teams.json
+# фейковая Jira DC со сгенерированными данными на http://127.0.0.1:8900 (любой PAT)
 backend/.venv/bin/python devtools/fake_jira.py
-# frontend с hot reload (проксирует /api на backend :8765)
+# сервис против неё на http://127.0.0.1:8080 (отдаёт frontend/dist)
+JTT_JIRA_URL=http://127.0.0.1:8900 JTT_JIRA_PAT=any JTT_TEAMS_FILE=devtools/sample-teams.json \
+  backend/.venv/bin/python -m jtt
+# frontend с hot reload на :5173 (проксирует /api на :8080)
 cd frontend && npm run dev
 ```

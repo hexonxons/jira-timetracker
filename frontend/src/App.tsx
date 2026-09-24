@@ -88,7 +88,7 @@ export function App() {
     setErrors([]);
     window.clearTimeout(poll.current);
     try {
-      const { id } = await api.startReport(period.start, period.end, settings?.managed ? ownTeams : undefined);
+      const { id } = await api.startReport(period.start, period.end, ownTeams);
       const tick = async () => {
         try {
           const j = await api.getReport(id);
@@ -116,8 +116,8 @@ export function App() {
   const hpd = settings?.hoursPerPersonDay ?? dataset?.meta.hoursPerPersonDay ?? 8;
   const running = job?.status === "running";
   const view = PAGES[page];
-  const hasTeams = Boolean(settings?.teamsConfig || (settings?.managed && ownTeams));
-  const needsSetup = settings && (!settings.jiraUrl || !settings.hasPat || !hasTeams || settings.configErrors.length > 0);
+  const hasTeams = Boolean(ownTeams || settings?.teamsConfig);
+  const needsSetup = settings && (!hasTeams || settings.configErrors.length > 0);
 
   return (
     <div className="app">
@@ -169,27 +169,21 @@ export function App() {
           <>
             <ErrorList errors={errors} title="The report could not be built:" />
             {needsSetup &&
-              (settings.managed ? (
-                settings.configErrors.length ? (
-                  <ErrorList
-                    errors={settings.configErrors}
-                    title="This instance is misconfigured; ask its administrator to fix:"
-                  />
-                ) : (
-                  <div className="alert">
-                    Upload a team config in <a href="#/settings">Settings</a> first.
-                  </div>
-                )
+              (settings.configErrors.length ? (
+                <ErrorList
+                  errors={settings.configErrors}
+                  title="This instance is misconfigured; ask its administrator to fix:"
+                />
               ) : (
                 <div className="alert">
-                  Set the Jira URL, token and team config in <a href="#/settings">Settings</a> first.
+                  Upload a team config in <a href="#/settings">Settings</a> first.
                 </div>
               ))}
           </>
         )}
 
         {view.kind === "settings" && settings && (
-          <SettingsPage settings={settings} onSaved={setSettings} ownTeams={ownTeams} onOwnTeams={updateOwnTeams} />
+          <SettingsPage settings={settings} ownTeams={ownTeams} onOwnTeams={updateOwnTeams} />
         )}
 
         {view.kind !== "settings" && dataset && (
