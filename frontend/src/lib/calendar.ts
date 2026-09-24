@@ -9,6 +9,8 @@ export interface DayColumn {
   weekday: string;
   label: string; // "Sep 3"
   weekend: boolean;
+  /** First visible column of a new Monday-based week (not set on the very first column). */
+  weekStart: boolean;
 }
 
 function toUtc(iso: string): number {
@@ -34,14 +36,33 @@ export function dayColumn(iso: string): DayColumn {
     weekday: WEEKDAYS[dow],
     label: `${MONTHS[d.getUTCMonth()]} ${d.getUTCDate()}`,
     weekend: dow === 0 || dow === 6,
+    weekStart: false,
   };
+}
+
+/** Monday of the week containing the date, as an ISO date. */
+export function weekOf(iso: string): string {
+  const t = toUtc(iso);
+  const sinceMonday = (new Date(t).getUTCDay() + 6) % 7;
+  return toIso(t - sinceMonday * MS_PER_DAY);
 }
 
 /** Calendar columns: working days, plus weekend days only when someone logged time on them. */
 export function visibleDays(start: string, end: string, datesWithTime: Set<string>): DayColumn[] {
-  return periodDays(start, end)
+  const days = periodDays(start, end)
     .map(dayColumn)
     .filter((c) => !c.weekend || datesWithTime.has(c.date));
+  days.forEach((c, i) => {
+    c.weekStart = i > 0 && weekOf(c.date) !== weekOf(days[i - 1].date);
+  });
+  return days;
+}
+
+/** Today's date in the browser's time zone, as an ISO date. */
+export function todayIso(): string {
+  const now = new Date();
+  const pad = (n: number) => String(n).padStart(2, "0");
+  return `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}`;
 }
 
 export function formatLongDate(iso: string): string {

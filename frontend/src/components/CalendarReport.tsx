@@ -1,6 +1,6 @@
 import { useCallback, useMemo, useRef, useState, type CSSProperties, type PointerEvent } from "react";
 import { buildTree, dailyTotals, idsToDepth, sumSeconds, type Dim, type Entry, type RowNode } from "../lib/aggregate";
-import type { DayColumn } from "../lib/calendar";
+import { todayIso, type DayColumn } from "../lib/calendar";
 import { formatValue, type Unit } from "../lib/format";
 import { readPref, writePref } from "../lib/prefs";
 import type { Dataset } from "../types";
@@ -62,6 +62,13 @@ export function CalendarReport({
   onUnitChange: (u: Unit) => void;
 }) {
   const fmt = (seconds: number) => formatValue(seconds, unit, hoursPerPersonDay);
+  const personDay = hoursPerPersonDay * 3600;
+  const today = todayIso();
+  // An employee row holds the person's whole day only when no SD Track level sits above it.
+  const employeeHasWholeDay = !dims.includes("track") || dims.indexOf("employee") < dims.indexOf("track");
+  /** Past working day on which the employee logged less than a person-day (nothing counts too). */
+  const isShort = (n: RowNode, d: DayColumn, seconds: number) =>
+    employeeHasWholeDay && n.dim === "employee" && !d.weekend && d.date < today && seconds < personDay;
   const labelWidth = useLabelWidth();
   const tree = useMemo(() => buildTree(dataset, entries, dims), [dataset, entries, dims]);
   const [expanded, setExpanded] = useState(() => idsToDepth(tree, defaultDepth));
@@ -107,6 +114,11 @@ export function CalendarReport({
           ))}
         </div>
         <UnitToggle unit={unit} onChange={onUnitChange} hoursPerPersonDay={hoursPerPersonDay} />
+        {employeeHasWholeDay && (
+          <span className="legend">
+            <span className="swatch short" /> less than 1 person-day on a past working day
+          </span>
+        )}
       </div>
       <div className="calendar-wrap" style={{ "--label-width": `${labelWidth.width}px` } as CSSProperties}>
         <table className="calendar">
@@ -123,7 +135,7 @@ export function CalendarReport({
                 />
               </th>
               {days.map((d) => (
-                <th key={d.date} className={`day ${d.weekend ? "weekend" : ""}`}>
+                <th key={d.date} className={`day ${d.weekend ? "weekend" : ""} ${d.weekStart ? "week-start" : ""}`}>
                   <div className="dow">{d.weekday}</div>
                   <div>{d.label}</div>
                 </th>
@@ -164,7 +176,8 @@ export function CalendarReport({
                     return (
                       <td
                         key={d.date}
-                        className={`cell ${d.weekend ? "weekend" : ""} ${v ? "has" : ""}`}
+                        className={`cell ${d.weekend ? "weekend" : ""} ${d.weekStart ? "week-start" : ""} ${v ? "has" : ""} ${isShort(n, d, v) ? "short" : ""}`}
+                        title={isShort(n, d, v) ? `${fmt(v) || "Nothing"} logged, less than 1 person-day (${hoursPerPersonDay}h)` : undefined}
                         onClick={v ? () => open(n, d.date) : undefined}
                       >
                         {fmt(v)}
@@ -186,7 +199,7 @@ export function CalendarReport({
                 return (
                   <td
                     key={d.date}
-                    className={`cell ${d.weekend ? "weekend" : ""} ${v ? "has" : ""}`}
+                    className={`cell ${d.weekend ? "weekend" : ""} ${d.weekStart ? "week-start" : ""} ${v ? "has" : ""}`}
                     onClick={v ? () => open(null, d.date) : undefined}
                   >
                     {fmt(v)}

@@ -75,6 +75,19 @@ describe("calendar", () => {
     expect(days[4].weekend).toBe(true);
     expect(days[0].label).toBe("Sep 1");
   });
+
+  it("marks the first visible day of each week", () => {
+    const withSunday = visibleDays("2026-09-01", "2026-09-14", new Set(["2026-09-06"]));
+    const starts = withSunday.filter((d) => d.weekStart).map((d) => d.date);
+    expect(starts).toEqual(["2026-09-07", "2026-09-14"]);
+    // a week whose Monday is hidden still starts at its first visible day
+    const fromWeekend = visibleDays("2026-09-05", "2026-09-08", new Set(["2026-09-06"]));
+    expect(fromWeekend.map((d) => [d.date, d.weekStart])).toEqual([
+      ["2026-09-06", false],
+      ["2026-09-07", true],
+      ["2026-09-08", false],
+    ]);
+  });
 });
 
 describe("format", () => {

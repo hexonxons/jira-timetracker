@@ -8,6 +8,9 @@
   --accent: #2f6fde;
   --accent-soft: #e6eefc;
   --weekend: #f3eee4;
+  --week-border: #8a93a3;
+  --short-bg: #fde2e1;
+  --short-text: #b42318;
   --group-0: #e9edf3;
   --group-1: #f4f6f9;
   --error-bg: #fdecec;
@@ -32,6 +35,9 @@
     --accent: #6d9eff;
     --accent-soft: #1f2d48;
     --weekend: #262219;
+    --week-border: #7b8494;
+    --short-bg: #4a1f1f;
+    --short-text: #ffb4ab;
     --group-0: #262c37;
     --group-1: #20252e;
     --error-bg: #3a1d1d;
@@ -765,4 +771,35 @@ table {
 .col-resizer:hover::after,
 .col-resizer:active::after {
   background: var(--accent);
+}
+
+/* Week separators: a heavier line before the first day of each week. */
+.calendar .week-start {
+  border-left: 2px solid var(--week-border);
+}
+
+/* Employee days with less than a person-day logged. */
+.calendar tbody tr > td.cell.short {
+  background: var(--short-bg);
+  color: var(--short-text);
+  font-weight: 700;
+}
+
+.legend {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--muted);
+}
+
+.swatch {
+  display: inline-block;
+  width: 12px;
+  height: 12px;
+  border-radius: 3px;
+}
+
+.swatch.short {
+  background: var(--short-bg);
+  border: 1px solid var(--short-text);
 }
