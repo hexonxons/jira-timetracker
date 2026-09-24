@@ -4,6 +4,8 @@ import { CalendarReport } from "./components/CalendarReport";
 import { ErrorList } from "./components/ErrorList";
 import { enrich, type Dim } from "./lib/aggregate";
 import { visibleDays } from "./lib/calendar";
+import type { Unit } from "./lib/format";
+import { readPref, writePref } from "./lib/prefs";
 import { loadOwnTeams, saveOwnTeams } from "./lib/teamsStore";
 import { SettingsPage } from "./pages/SettingsPage";
 import { SummaryPage } from "./pages/SummaryPage";
@@ -65,6 +67,13 @@ export function App() {
   const [errors, setErrors] = useState<string[]>([]);
   const [dataset, setDataset] = useState<Dataset | null>(null);
   const [ownTeams, setOwnTeams] = useState<unknown | null>(loadOwnTeams);
+  const [unit, setUnit] = useState<Unit>(() =>
+    readPref("jtt.unit", "hours", (v): v is Unit => v === "hours" || v === "personDays"),
+  );
+  const updateUnit = (u: Unit) => {
+    setUnit(u);
+    writePref("jtt.unit", u);
+  };
   const updateOwnTeams = (config: unknown | null) => {
     setOwnTeams(config);
     saveOwnTeams(config);
@@ -202,9 +211,18 @@ export function App() {
                 dims={view.dims}
                 defaultDepth={view.defaultDepth}
                 hoursPerPersonDay={hpd}
+                unit={unit}
+                onUnitChange={updateUnit}
               />
             ) : (
-              <SummaryPage key={dataset.meta.generatedAt} dataset={dataset} entries={entries} hoursPerPersonDay={hpd} />
+              <SummaryPage
+                key={dataset.meta.generatedAt}
+                dataset={dataset}
+                entries={entries}
+                hoursPerPersonDay={hpd}
+                unit={unit}
+                onUnitChange={updateUnit}
+              />
             )}
           </>
         )}

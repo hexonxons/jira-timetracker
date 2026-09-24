@@ -1,10 +1,44 @@
-import { useCallback, useMemo, useState } from "react";
+import { useCallback, useMemo, useRef, useState, type CSSProperties, type PointerEvent } from "react";
 import { buildTree, dailyTotals, idsToDepth, sumSeconds, type Dim, type Entry, type RowNode } from "../lib/aggregate";
 import type { DayColumn } from "../lib/calendar";
-import { formatDuration } from "../lib/format";
+import { formatValue, type Unit } from "../lib/format";
+import { readPref, writePref } from "../lib/prefs";
 import type { Dataset } from "../types";
 import { DrillPanel, type DrillTarget } from "./DrillPanel";
 import { IssueLink } from "./IssueLink";
+import { UnitToggle } from "./UnitToggle";
+
+const LABEL_WIDTH = { key: "jtt.labelWidth", default: 340, min: 160, max: 900 };
+const clampWidth = (w: number) => Math.round(Math.min(LABEL_WIDTH.max, Math.max(LABEL_WIDTH.min, w)));
+
+/** Width of the first (row label) column, shared by all calendar reports and remembered in the browser. */
+function useLabelWidth() {
+  const [width, setWidth] = useState(() =>
+    readPref(LABEL_WIDTH.key, LABEL_WIDTH.default, (v): v is number => typeof v === "number" && isFinite(v)),
+  );
+  const drag = useRef<{ x: number; width: number } | null>(null);
+
+  const onPointerDown = (e: PointerEvent<HTMLSpanElement>) => {
+    e.preventDefault();
+    e.currentTarget.setPointerCapture(e.pointerId);
+    drag.current = { x: e.clientX, width };
+  };
+  const onPointerMove = (e: PointerEvent<HTMLSpanElement>) => {
+    if (drag.current) setWidth(clampWidth(drag.current.width + e.clientX - drag.current.x));
+  };
+  const onPointerUp = (e: PointerEvent<HTMLSpanElement>) => {
+    if (!drag.current) return;
+    const final = clampWidth(drag.current.width + e.clientX - drag.current.x);
+    drag.current = null;
+    setWidth(final);
+    writePref(LABEL_WIDTH.key, final);
+  };
+  const reset = () => {
+    setWidth(LABEL_WIDTH.default);
+    writePref(LABEL_WIDTH.key, LABEL_WIDTH.default);
+  };
+  return { width, handle: { onPointerDown, onPointerMove, onPointerUp, onPointerCancel: onPointerUp, onDoubleClick: reset } };
+}
 
 const DIM_NAMES: Record<Dim, string> = { team: "Teams", employee: "Employees", track: "SD Tracks", issue: "Issues" };
 
@@ -15,6 +49,8 @@ export function CalendarReport({
   dims,
   defaultDepth,
   hoursPerPersonDay,
+  unit,
+  onUnitChange,
 }: {
   dataset: Dataset;
   entries: Entry[];
@@ -22,7 +58,11 @@ export function CalendarReport({
   dims: Dim[];
   defaultDepth: number;
   hoursPerPersonDay: number;
+  unit: Unit;
+  onUnitChange: (u: Unit) => void;
 }) {
+  const fmt = (seconds: number) => formatValue(seconds, unit, hoursPerPersonDay);
+  const labelWidth = useLabelWidth();
   const tree = useMemo(() => buildTree(dataset, entries, dims), [dataset, entries, dims]);
   const [expanded, setExpanded] = useState(() => idsToDepth(tree, defaultDepth));
   const [drill, setDrill] = useState<DrillTarget | null>(null);
@@ -66,12 +106,22 @@ export function CalendarReport({
             </button>
           ))}
         </div>
+        <UnitToggle unit={unit} onChange={onUnitChange} hoursPerPersonDay={hoursPerPersonDay} />
       </div>
-      <div className="calendar-wrap">
+      <div className="calendar-wrap" style={{ "--label-width": `${labelWidth.width}px` } as CSSProperties}>
         <table className="calendar">
           <thead>
             <tr>
-              <th className="sticky-col row-head">{dims.map((d) => DIM_NAMES[d]).join(" / ")}</th>
+              <th className="sticky-col row-head">
+                {dims.map((d) => DIM_NAMES[d]).join(" / ")}
+                <span
+                  className="col-resizer"
+                  role="separator"
+                  aria-orientation="vertical"
+                  title="Drag to resize, double-click to reset"
+                  {...labelWidth.handle}
+                />
+              </th>
               {days.map((d) => (
                 <th key={d.date} className={`day ${d.weekend ? "weekend" : ""}`}>
                   <div className="dow">{d.weekday}</div>
@@ -117,12 +167,12 @@ export function CalendarReport({
                         className={`cell ${d.weekend ? "weekend" : ""} ${v ? "has" : ""}`}
                         onClick={v ? () => open(n, d.date) : undefined}
                       >
-                        {formatDuration(v)}
+                        {fmt(v)}
                       </td>
                     );
                   })}
                   <td className={`total-col cell ${n.total ? "has" : ""}`} onClick={n.total ? () => open(n) : undefined}>
-                    {formatDuration(n.total)}
+                    {fmt(n.total)}
                   </td>
                 </tr>
               );
@@ -139,18 +189,18 @@ export function CalendarReport({
                     className={`cell ${d.weekend ? "weekend" : ""} ${v ? "has" : ""}`}
                     onClick={v ? () => open(null, d.date) : undefined}
                   >
-                    {formatDuration(v)}
+                    {fmt(v)}
                   </td>
                 );
               })}
               <td className={`total-col cell ${grandTotal ? "has" : ""}`} onClick={grandTotal ? () => open(null) : undefined}>
-                {formatDuration(grandTotal)}
+                {fmt(grandTotal)}
               </td>
             </tr>
           </tfoot>
         </table>
       </div>
-      {drill && <DrillPanel target={drill} hoursPerPersonDay={hoursPerPersonDay} onClose={closeDrill} />}
+      {drill && <DrillPanel target={drill} hoursPerPersonDay={hoursPerPersonDay} unit={unit} onClose={closeDrill} />}
     </div>
   );
 }

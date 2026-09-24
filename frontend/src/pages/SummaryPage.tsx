@@ -3,17 +3,21 @@ import { compareMembers, compareTracks, groupBy, sumSeconds, tracksOf, type Entr
 import { formatDuration, formatPercent, formatValue, type Unit } from "../lib/format";
 import type { Dataset } from "../types";
 import { DrillPanel, type DrillTarget } from "../components/DrillPanel";
+import { UnitToggle } from "../components/UnitToggle";
 
 export function SummaryPage({
   dataset,
   entries,
   hoursPerPersonDay: hpd,
+  unit,
+  onUnitChange,
 }: {
   dataset: Dataset;
   entries: Entry[];
   hoursPerPersonDay: number;
+  unit: Unit;
+  onUnitChange: (u: Unit) => void;
 }) {
-  const [unit, setUnit] = useState<Unit>("personDays");
   const [drill, setDrill] = useState<DrillTarget | null>(null);
   const closeDrill = useCallback(() => setDrill(null), []);
 
@@ -51,16 +55,7 @@ export function SummaryPage({
   return (
     <div className={`report summary ${drill ? "with-drill" : ""}`}>
       <div className="toolbar">
-        <span className="muted">Units:</span>
-        <div className="segmented small">
-          <button className={unit === "hours" ? "on" : ""} onClick={() => setUnit("hours")}>
-            Hours
-          </button>
-          <button className={unit === "personDays" ? "on" : ""} onClick={() => setUnit("personDays")}>
-            Person-days
-          </button>
-        </div>
-        <span className="muted">1 person-day = {hpd}h</span>
+        <UnitToggle unit={unit} onChange={onUnitChange} hoursPerPersonDay={hpd} />
       </div>
 
       <div className="summary-body">
@@ -245,7 +240,7 @@ export function SummaryPage({
           </table>
         </Section>
       </div>
-      {drill && <DrillPanel target={drill} hoursPerPersonDay={hpd} onClose={closeDrill} />}
+      {drill && <DrillPanel target={drill} hoursPerPersonDay={hpd} unit={unit} onClose={closeDrill} />}
     </div>
   );
 }

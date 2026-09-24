@@ -734,3 +734,35 @@ table {
 .teams-table th {
   text-align: left;
 }
+
+/* Drag handle on the right edge of the first calendar column. */
+.calendar .row-head {
+  position: sticky;
+}
+
+.col-resizer {
+  position: absolute;
+  top: 0;
+  right: -4px;
+  width: 8px;
+  height: 100%;
+  cursor: col-resize;
+  touch-action: none;
+  z-index: 4;
+}
+
+.col-resizer::after {
+  content: "";
+  position: absolute;
+  top: 20%;
+  bottom: 20%;
+  left: 3px;
+  width: 2px;
+  border-radius: 1px;
+  background: var(--border);
+}
+
+.col-resizer:hover::after,
+.col-resizer:active::after {
+  background: var(--accent);
+}
