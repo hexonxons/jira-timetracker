@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { compareIssueKeys, compareMembers, groupBy, sumSeconds, type Entry } from "../lib/aggregate";
 import { formatLongDate } from "../lib/calendar";
-import { formatDuration, formatPersonDays, formatValue, type Unit } from "../lib/format";
+import { amountUnit, formatDuration, formatPersonDays, formatValue, type Unit } from "../lib/format";
 import { IssueLink } from "./IssueLink";
 
 export interface DrillTarget {
@@ -27,7 +27,8 @@ export function DrillPanel({
   unit: Unit;
   onClose: () => void;
 }) {
-  const fmt = (seconds: number) => formatValue(seconds, unit, hoursPerPersonDay);
+  // Details are amounts; shares of the panel's total are shown next to each group already.
+  const fmt = (seconds: number) => formatValue(seconds, amountUnit(unit), hoursPerPersonDay);
   const [byDay, setByDay] = useState(false);
   useEffect(() => setByDay(false), [target]);
   useEffect(() => {
@@ -64,7 +65,7 @@ export function DrillPanel({
         </button>
       </header>
       <div className="drill-total">
-        {unit === "hours" ? (
+        {amountUnit(unit) === "hours" ? (
           <>
             <span className="big">{formatDuration(total) || "0h"}</span>
             <span className="muted">{formatPersonDays(total, hoursPerPersonDay) || "0.00"} person-days</span>

@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { NO_TRACK, buildTree, enrich, idsToDepth, type RowNode } from "./aggregate";
 import { visibleDays } from "./calendar";
-import { formatDuration, formatPersonDays } from "./format";
+import { formatDuration, formatPersonDays, formatShare, formatValue } from "./format";
 import { fixture } from "./fixture";
 
 const entries = enrich(fixture);
@@ -97,6 +97,16 @@ describe("format", () => {
     expect(formatDuration(8 * 3600)).toBe("8h");
     expect(formatDuration(7.5 * 3600)).toBe("7h 30m");
     expect(formatDuration(142 * 3600 + 15 * 60)).toBe("142h 15m");
+  });
+
+  it("formats shares of the team's time", () => {
+    expect(formatShare(0, 100)).toBe("");
+    expect(formatShare(5, 0)).toBe("");
+    expect(formatShare(1, 8)).toBe("12.5%");
+    expect(formatShare(8, 8)).toBe("100%");
+    expect(formatShare(1, 3)).toBe("33.3%");
+    expect(formatValue(3600, "percent", 8, 4 * 3600)).toBe("25%");
+    expect(formatValue(3600, "hours", 8, 4 * 3600)).toBe("1h");
   });
 
   it("formats person-days", () => {

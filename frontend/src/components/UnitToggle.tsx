@@ -19,8 +19,17 @@ export function UnitToggle({
         <button className={unit === "personDays" ? "on" : ""} onClick={() => onChange("personDays")}>
           Person-days
         </button>
+        <button
+          className={unit === "percent" ? "on" : ""}
+          onClick={() => onChange("percent")}
+          title="Share of the team's logged time in the same column"
+        >
+          % of team
+        </button>
       </div>
-      <span className="muted">1 person-day = {hoursPerPersonDay}h</span>
+      <span className="muted">
+        {unit === "percent" ? "share of the team's logged time in the same column" : `1 person-day = ${hoursPerPersonDay}h`}
+      </span>
     </>
   );
 }

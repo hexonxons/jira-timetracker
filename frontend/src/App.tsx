@@ -4,7 +4,7 @@ import { CalendarReport } from "./components/CalendarReport";
 import { ErrorList } from "./components/ErrorList";
 import { enrich, type Dim } from "./lib/aggregate";
 import { visibleDays } from "./lib/calendar";
-import type { Unit } from "./lib/format";
+import { UNITS, type Unit } from "./lib/format";
 import { readPref, writePref } from "./lib/prefs";
 import { loadOwnTeams, saveOwnTeams } from "./lib/teamsStore";
 import { SettingsPage } from "./pages/SettingsPage";
@@ -68,7 +68,7 @@ export function App() {
   const [dataset, setDataset] = useState<Dataset | null>(null);
   const [ownTeams, setOwnTeams] = useState<unknown | null>(loadOwnTeams);
   const [unit, setUnit] = useState<Unit>(() =>
-    readPref("jtt.unit", "hours", (v): v is Unit => v === "hours" || v === "personDays"),
+    readPref("jtt.unit", "hours", (v): v is Unit => UNITS.includes(v as Unit)),
   );
   const updateUnit = (u: Unit) => {
     setUnit(u);

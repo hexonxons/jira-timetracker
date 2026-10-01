@@ -61,7 +61,7 @@ export function CalendarReport({
   unit: Unit;
   onUnitChange: (u: Unit) => void;
 }) {
-  const fmt = (seconds: number) => formatValue(seconds, unit, hoursPerPersonDay);
+  const fmt = (seconds: number, whole = 0) => formatValue(seconds, unit, hoursPerPersonDay, whole);
   const personDay = hoursPerPersonDay * 3600;
   const today = todayIso();
   // An employee row holds the person's whole day only when no SD Track level sits above it.
@@ -93,6 +93,9 @@ export function CalendarReport({
   walk(tree);
 
   const totals = useMemo(() => dailyTotals(entries), [entries]);
+  // Denominators for "% of team": every row's share is taken of its team's time in the same column.
+  const teamOf = useMemo(() => new Map(tree.map((t) => [t.key, t])), [tree]);
+  const teamNode = (n: RowNode) => teamOf.get(n.path[0]);
   const grandTotal = sumSeconds(entries);
 
   const open = (node: RowNode | null, date?: string) => {
@@ -177,15 +180,15 @@ export function CalendarReport({
                       <td
                         key={d.date}
                         className={`cell ${d.weekend ? "weekend" : ""} ${d.weekStart ? "week-start" : ""} ${v ? "has" : ""} ${isShort(n, d, v) ? "short" : ""}`}
-                        title={isShort(n, d, v) ? `${fmt(v) || "Nothing"} logged, less than 1 person-day (${hoursPerPersonDay}h)` : undefined}
+                        title={isShort(n, d, v) ? `${formatValue(v, "hours", hoursPerPersonDay) || "Nothing"} logged, less than 1 person-day (${hoursPerPersonDay}h)` : undefined}
                         onClick={v ? () => open(n, d.date) : undefined}
                       >
-                        {fmt(v)}
+                        {fmt(v, teamNode(n)?.byDay.get(d.date))}
                       </td>
                     );
                   })}
                   <td className={`total-col cell ${n.total ? "has" : ""}`} onClick={n.total ? () => open(n) : undefined}>
-                    {fmt(n.total)}
+                    {fmt(n.total, teamNode(n)?.total)}
                   </td>
                 </tr>
               );
@@ -202,12 +205,12 @@ export function CalendarReport({
                     className={`cell ${d.weekend ? "weekend" : ""} ${d.weekStart ? "week-start" : ""} ${v ? "has" : ""}`}
                     onClick={v ? () => open(null, d.date) : undefined}
                   >
-                    {fmt(v)}
+                    {fmt(v, v)}
                   </td>
                 );
               })}
               <td className={`total-col cell ${grandTotal ? "has" : ""}`} onClick={grandTotal ? () => open(null) : undefined}>
-                {fmt(grandTotal)}
+                {fmt(grandTotal, grandTotal)}
               </td>
             </tr>
           </tfoot>
