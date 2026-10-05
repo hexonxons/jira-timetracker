@@ -15,7 +15,14 @@
 FROM node:22-alpine AS ui
 ARG NPM_CONFIG_REGISTRY
 COPY docker/tls-compat.cnf /etc/ssl/tls-compat.cnf
-ENV OPENSSL_CONF=/etc/ssl/tls-compat.cnf
+# Fewer parallel downloads and patient retries: many concurrent connections stall on some
+# networks (VPNs, Docker Desktop on Windows/macOS), which npm reports as "Exit handler never called!".
+ENV OPENSSL_CONF=/etc/ssl/tls-compat.cnf \
+    NPM_CONFIG_MAXSOCKETS=4 \
+    NPM_CONFIG_FETCH_RETRIES=5 \
+    NPM_CONFIG_FETCH_RETRY_MINTIMEOUT=20000 \
+    NPM_CONFIG_FETCH_RETRY_MAXTIMEOUT=120000 \
+    NPM_CONFIG_FETCH_TIMEOUT=600000
 WORKDIR /ui
 COPY frontend/package.json frontend/package-lock.json ./
 RUN --mount=type=secret,id=ca_bundle,required=false \

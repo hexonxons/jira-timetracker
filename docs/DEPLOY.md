@@ -83,6 +83,31 @@ docker build \
 `/etc/docker/daemon.json` → `{"dns": ["10.0.0.53", "10.0.0.54"]}` и `sudo systemctl restart docker`
 (в Docker Desktop — Settings → Docker Engine).
 
+### Сборка на Windows (Docker Desktop)
+
+Docker Desktop собирает образ внутри виртуальной машины WSL2, поэтому `sudo` не нужен, а `--network host`
+даёт сеть этой ВМ, а не Windows. Запускайте сборку из PowerShell в папке проекта:
+
+```powershell
+docker build --no-cache -t jira-timetracker:1.0 .
+```
+
+Если сборка зависает на `npm ci` (`npm error Exit handler never called!`) или pip падает по таймауту, а в
+браузере Windows всё открывается, — сеть WSL2 не дружит с VPN или корпоративной сетью:
+
+1. Включите «зеркальную» сеть WSL (Windows 11 22H2+): в `%UserProfile%\.wslconfig`
+   ```ini
+   [wsl2]
+   networkingMode=mirrored
+   ```
+   затем `wsl --shutdown` и перезапуск Docker Desktop.
+2. Либо уменьшите MTU Docker: Docker Desktop → Settings → Docker Engine → добавьте `"mtu": 1400` → Apply & restart.
+3. Проверить сеть внутри Docker без сборки:
+   ```powershell
+   docker run --rm -v "${PWD}\frontend:/src:ro" node:22-alpine sh -c "mkdir /w && cp /src/package*.json /w && cd /w && npm ci --no-audit --no-fund --loglevel http"
+   ```
+   Последние строки покажут, на каком запросе всё встало.
+
 Затем загрузите образ в реестр, из которого тянет ваша платформа:
 `docker tag jira-timetracker:latest registry.company.com/jira-timetracker:1.0 && docker push ...`.
 
