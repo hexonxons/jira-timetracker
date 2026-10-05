@@ -7,3 +7,4 @@ frontend/dist
 .git
 deploy
 docs
+windows-roots.pem

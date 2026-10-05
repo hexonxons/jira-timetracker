@@ -92,6 +92,22 @@ Docker Desktop собирает образ внутри виртуальной �
 docker build --no-cache -t jira-timetracker:1.0 .
 ```
 
+Если npm пишет `SELF_SIGNED_CERT_IN_CHAIN` (или pip — `CERTIFICATE_VERIFY_FAILED`), HTTPS-трафик
+перехватывает корпоративный прокси или антивирус. Windows доверяет его корневому сертификату, а контейнер —
+нет. Выгрузите доверенные корневые сертификаты Windows в файл и передайте его в сборку (в образ он не попадает):
+
+```powershell
+$certs = Get-ChildItem Cert:\LocalMachine\Root, Cert:\CurrentUser\Root
+$certs | ForEach-Object {
+  "-----BEGIN CERTIFICATE-----`n" + [Convert]::ToBase64String($_.RawData, 'InsertLineBreaks') + "`n-----END CERTIFICATE-----"
+} | Set-Content -Encoding ascii windows-roots.pem
+
+docker build --no-cache --secret id=ca_bundle,src=windows-roots.pem -t jira-timetracker:1.0 .
+```
+
+Этот же перехват касается и работающего сервиса, если он будет ходить в Jira через ту же сеть: тогда
+смонтируйте файл в контейнер и укажите `JTT_CA_BUNDLE` (см. таблицу переменных).
+
 Если сборка зависает на `npm ci` (`npm error Exit handler never called!`) или pip падает по таймауту, а в
 браузере Windows всё открывается, — сеть WSL2 не дружит с VPN или корпоративной сетью:
 
