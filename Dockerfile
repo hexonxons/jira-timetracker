@@ -7,9 +7,15 @@
 #   --secret id=ca_bundle,src=corp-ca.pem             trust a TLS-intercepting proxy's CA (not stored in the image)
 #   --build-arg PIP_INDEX_URL=https://nexus/.../simple --build-arg NPM_CONFIG_REGISTRY=https://nexus/.../npm/
 #                                                     use internal package mirrors instead of pypi.org / npmjs.org
+#
+# docker/tls-compat.cnf keeps TLS handshakes small (no post-quantum key share): large ones
+# stall behind some corporate firewalls. It applies to the build and to the running service;
+# run with -e OPENSSL_CONF=/etc/ssl/openssl.cnf to restore OpenSSL defaults.
 
 FROM node:22-alpine AS ui
 ARG NPM_CONFIG_REGISTRY
+COPY docker/tls-compat.cnf /etc/ssl/tls-compat.cnf
+ENV OPENSSL_CONF=/etc/ssl/tls-compat.cnf
 WORKDIR /ui
 COPY frontend/package.json frontend/package-lock.json ./
 RUN --mount=type=secret,id=ca_bundle,required=false \
@@ -24,7 +30,9 @@ ARG PIP_TRUSTED_HOST
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
     JTT_FRONTEND_DIST=/app/frontend/dist \
+    OPENSSL_CONF=/etc/ssl/tls-compat.cnf \
     PORT=8080
+COPY docker/tls-compat.cnf /etc/ssl/tls-compat.cnf
 WORKDIR /app
 COPY backend/pyproject.toml /app/backend/pyproject.toml
 COPY backend/jtt /app/backend/jtt

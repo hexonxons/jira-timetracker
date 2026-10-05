@@ -49,6 +49,10 @@ docker build \
 - `Temporary failure in name resolution` / `Could not find a version that satisfies the requirement setuptools` —
   внутри сборки не работает DNS (часто при VPN или корпоративном DNS, который Docker не передаёт в контейнеры);
 - `CERTIFICATE_VERIFY_FAILED` / `self-signed certificate in certificate chain` — прокси подменяет TLS-сертификаты;
+- `The handshake operation timed out` / `Read timed out` при том, что `curl https://pypi.org` с хоста работает —
+  межсетевой экран не пропускает «большой» TLS-handshake. OpenSSL 3.5 (Debian 13, Node 22) добавляет в него
+  постквантовый ключ, и первый пакет вырастает до ~1.5 КБ. Образ уже отключает это через
+  `docker/tls-compat.cnf` (и при сборке, и для работы сервиса); если у вас образ старше — обновите код;
 - таймауты — в интернет можно только через прокси.
 
 Проверить, что видит контейнер: `docker run --rm python:3.12-slim python -c "import socket; print(socket.gethostbyname('pypi.org'))"`.

@@ -1,0 +1,16 @@
+# OpenSSL 3.5+ (Debian 13, bundled with Node 22) adds a post-quantum X25519MLKEM768 key share
+# to every TLS ClientHello, making it ~1.5 KB. Some corporate firewalls and DPI middleboxes
+# stall on such handshakes ("The handshake operation timed out" from pip, npm or the Jira client).
+# These classic groups keep ClientHello small; TLS stays as secure as with OpenSSL 3.0.
+# Read by Python (openssl_conf) and Node.js (nodejs_conf) via OPENSSL_CONF.
+openssl_conf = tls_compat
+nodejs_conf = tls_compat
+
+[tls_compat]
+ssl_conf = tls_compat_ssl
+
+[tls_compat_ssl]
+system_default = tls_compat_defaults
+
+[tls_compat_defaults]
+Groups = X25519:P-256:P-384
