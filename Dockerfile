@@ -1,11 +1,15 @@
 # syntax=docker/dockerfile:1
 # Jira Time Reports as a service. Configuration: environment variables, see docs/DEPLOY.md.
 #
-# Behind a TLS-intercepting corporate proxy, pass its CA to the build (used only while
-# downloading packages, not stored in the image):
-#   docker build --secret id=ca_bundle,src=corp-ca.pem --build-arg HTTPS_PROXY=http://proxy:3128 .
+# The build downloads npm and PyPI packages. In a corporate network (see docs/DEPLOY.md):
+#   --network host                                    use the host's DNS/VPN during the build
+#   --build-arg HTTPS_PROXY=http://proxy:3128         go through an HTTP proxy
+#   --secret id=ca_bundle,src=corp-ca.pem             trust a TLS-intercepting proxy's CA (not stored in the image)
+#   --build-arg PIP_INDEX_URL=https://nexus/.../simple --build-arg NPM_CONFIG_REGISTRY=https://nexus/.../npm/
+#                                                     use internal package mirrors instead of pypi.org / npmjs.org
 
 FROM node:22-alpine AS ui
+ARG NPM_CONFIG_REGISTRY
 WORKDIR /ui
 COPY frontend/package.json frontend/package-lock.json ./
 RUN --mount=type=secret,id=ca_bundle,required=false \
@@ -15,6 +19,8 @@ COPY frontend/ ./
 RUN npm run build
 
 FROM python:3.12-slim
+ARG PIP_INDEX_URL
+ARG PIP_TRUSTED_HOST
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
     JTT_FRONTEND_DIST=/app/frontend/dist \

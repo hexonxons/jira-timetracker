@@ -41,6 +41,44 @@ docker build \
   -t jira-timetracker:latest .
 ```
 
+### Сборка падает на скачивании пакетов
+
+Во время сборки скачиваются пакеты npm (`registry.npmjs.org`) и PyPI (`pypi.org`). Если сборочный контейнер
+не может до них достучаться, ошибка выглядит так:
+
+- `Temporary failure in name resolution` / `Could not find a version that satisfies the requirement setuptools` —
+  внутри сборки не работает DNS (часто при VPN или корпоративном DNS, который Docker не передаёт в контейнеры);
+- `CERTIFICATE_VERIFY_FAILED` / `self-signed certificate in certificate chain` — прокси подменяет TLS-сертификаты;
+- таймауты — в интернет можно только через прокси.
+
+Проверить, что видит контейнер: `docker run --rm python:3.12-slim python -c "import socket; print(socket.gethostbyname('pypi.org'))"`.
+
+Варианты, по возрастанию усилий:
+
+```bash
+# 1. Использовать сеть и DNS хоста (Linux; самый частый случай с VPN)
+docker build --network host -t jira-timetracker .
+
+# 2. Ходить через HTTP-прокси (и, если он подменяет TLS, доверять его CA)
+docker build --network host \
+  --build-arg HTTPS_PROXY=http://proxy.company.com:3128 \
+  --secret id=ca_bundle,src=corp-root-ca.pem \
+  -t jira-timetracker .
+
+# 3. Качать пакеты из внутренних зеркал (Nexus, Artifactory) вместо интернета
+docker build \
+  --build-arg PIP_INDEX_URL=https://nexus.company.com/repository/pypi/simple \
+  --build-arg NPM_CONFIG_REGISTRY=https://nexus.company.com/repository/npm/ \
+  -t jira-timetracker .
+```
+
+Если зеркало PyPI отдаётся по HTTP или с самоподписанным сертификатом, добавьте
+`--build-arg PIP_TRUSTED_HOST=nexus.company.com` (или передайте его CA через `--secret id=ca_bundle,...`).
+
+Чтобы DNS работал во всех сборках без `--network host`, можно прописать корпоративные DNS-серверы Docker’у:
+`/etc/docker/daemon.json` → `{"dns": ["10.0.0.53", "10.0.0.54"]}` и `sudo systemctl restart docker`
+(в Docker Desktop — Settings → Docker Engine).
+
 Затем загрузите образ в реестр, из которого тянет ваша платформа:
 `docker tag jira-timetracker:latest registry.company.com/jira-timetracker:1.0 && docker push ...`.
 
