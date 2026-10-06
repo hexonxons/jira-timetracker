@@ -380,7 +380,7 @@ function VacationsCard({
     <section className="card">
       <h2>Vacations</h2>
       <p className="muted">
-        Vacation working days are shown in green and excluded from the monthly norm. Kept in this browser; share them
+        Vacation working days are shown in green and excluded from the norm in Total. Kept in this browser; share them
         with the configuration file.
       </p>
       <form className="vacation-form" onSubmit={add}>

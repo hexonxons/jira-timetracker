@@ -2,7 +2,7 @@ import { useCallback, useMemo, useRef, useState, type CSSProperties, type Pointe
 import { buildTree, dailyTotals, idsToDepth, sumSeconds, type Dim, type Entry, type RowNode } from "../lib/aggregate";
 import { todayIso, type DayColumn } from "../lib/calendar";
 import { formatValue, type Unit } from "../lib/format";
-import { dayMark, rangeLabel, type DayMark, type DayRange } from "../lib/highlight";
+import { dayMark, normDays, rangeLabel, type DayMark, type DayRange } from "../lib/highlight";
 import { isOnVacation, type VacationDays } from "../lib/vacations";
 import { readPref, writePref } from "../lib/prefs";
 import type { Dataset } from "../types";
@@ -70,6 +70,7 @@ export function CalendarReport({
   range: DayRange;
 }) {
   const fmt = (seconds: number, whole = 0) => formatValue(seconds, unit, hoursPerPersonDay, whole);
+  const personDay = hoursPerPersonDay * 3600;
   const today = todayIso();
   // An employee row holds the person's whole day only when no SD Track level sits above it.
   const employeeHasWholeDay = !dims.includes("track") || dims.indexOf("employee") < dims.indexOf("track");
@@ -82,6 +83,21 @@ export function CalendarReport({
     const vacation = isOnVacation(vacations, n.member.username, d.date);
     const mark = dayMark({ date: d.date, weekend: d.weekend, today, seconds, vacation, range });
     return mark === "vacation" || employeeHasWholeDay ? mark : null;
+  };
+  /**
+   * Employee Total vs the norm for the period: hours per person-day × working days before today,
+   * minus vacation days. Only where the employee row holds the person's whole time.
+   */
+  const totalCheck = (n: RowNode) => {
+    if (!employeeHasWholeDay || n.dim !== "employee" || !n.member) return null;
+    const days = normDays(dataset.meta.start, dataset.meta.end, today, n.member.username, vacations);
+    const norm = days.working * personDay;
+    if (norm === 0 || n.total >= norm) return null;
+    const hours = (s: number) => formatValue(s, "hours", hoursPerPersonDay) || "0h";
+    return (
+      `${hours(n.total)} logged, norm ${hours(norm)} (${days.working} working day(s) × ${hoursPerPersonDay}h` +
+      `${days.vacation ? `, ${days.vacation} vacation day(s) excluded` : ""}); ${hours(norm - n.total)} short`
+    );
   };
   const markTitle = (mark: DayMark, seconds: number) => {
     const logged = formatValue(seconds, "hours", hoursPerPersonDay) || "Nothing";
@@ -141,7 +157,7 @@ export function CalendarReport({
         <span className="legend">
           {employeeHasWholeDay && (
             <>
-              <span className="swatch short" /> {rangeLabel(range)} a day
+              <span className="swatch short" /> {rangeLabel(range)} a day; Total below the norm
             </>
           )}
           <span className="swatch vacation" /> vacation
@@ -211,7 +227,11 @@ export function CalendarReport({
                       </td>
                     );
                   })}
-                  <td className={`total-col cell ${n.total ? "has" : ""}`} onClick={n.total ? () => open(n) : undefined}>
+                  <td
+                    className={`total-col cell ${n.total ? "has" : ""} ${totalCheck(n) ? "short" : ""}`}
+                    title={totalCheck(n) ?? undefined}
+                    onClick={n.total ? () => open(n) : undefined}
+                  >
                     {fmt(n.total, teamNode(n)?.total)}
                   </td>
                 </tr>

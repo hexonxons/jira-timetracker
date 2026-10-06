@@ -10,7 +10,6 @@ import { readPref, removePref, writePref } from "./lib/prefs";
 import { loadOwnTeams, saveOwnTeams } from "./lib/teamsStore";
 import { parseVacations, vacationDays, type Vacation } from "./lib/vacations";
 import { instanceDefaults, isRange } from "./lib/workspace";
-import { MonthlyPage } from "./pages/MonthlyPage";
 import { SettingsPage } from "./pages/SettingsPage";
 import { SummaryPage } from "./pages/SummaryPage";
 import type { Dataset } from "./types";
@@ -23,7 +22,7 @@ interface CalendarView {
   defaultDepth: number;
 }
 
-const PAGES: Record<string, CalendarView | { kind: "summary" | "monthly" | "settings"; title: string; hint: string }> = {
+const PAGES: Record<string, CalendarView | { kind: "summary" | "settings"; title: string; hint: string }> = {
   "people-issues": {
     kind: "calendar",
     title: "People / Issues",
@@ -46,11 +45,6 @@ const PAGES: Record<string, CalendarView | { kind: "summary" | "monthly" | "sett
     defaultDepth: 1,
   },
   summary: { kind: "summary", title: "Summary", hint: "Totals for the whole period." },
-  monthly: {
-    kind: "monthly",
-    title: "Monthly",
-    hint: "Time logged per person by week, against the norm. Pick a whole month for a monthly report.",
-  },
   settings: { kind: "settings", title: "Settings", hint: "" },
 };
 
@@ -259,16 +253,6 @@ export function App() {
                 vacations={vacationsByUser}
                 range={range}
               />
-            ) : view.kind === "monthly" ? (
-              <MonthlyPage
-                key={dataset.meta.generatedAt}
-                dataset={dataset}
-                entries={entries}
-                hoursPerPersonDay={hpd}
-                unit={unit}
-                onUnitChange={updateUnit}
-                vacations={vacationsByUser}
-              />
             ) : (
               <SummaryPage
                 key={dataset.meta.generatedAt}
@@ -303,6 +287,10 @@ function Caveats({ dataset }: { dataset: Dataset }) {
         <li>Only issues and worklogs visible to the Personal Access Token owner are included.</li>
         <li>A worklog's day is the date of its start time, as Jira reports it for the token owner's time zone.</li>
         <li>Weekends are hidden unless someone logged time on them (then shown shaded). Holidays are not handled.</li>
+        <li>
+          An employee's Total is red when it is below the norm: hours per person-day × working days of the period
+          before today, minus vacation days.
+        </li>
         <li>Team edits in Settings apply to the next report you generate; vacations and highlighting apply at once.</li>
         {dataset.meta.warnings.map((w, i) => (
           <li key={i} className="warn">

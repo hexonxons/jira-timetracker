@@ -783,7 +783,8 @@ table {
 }
 
 /* Employee days with less than a person-day logged. */
-.calendar tbody tr > td.cell.short {
+.calendar tbody tr > td.cell.short,
+.calendar tbody tr > td.total-col.cell.short {
   background: var(--short-bg);
   color: var(--short-text);
   font-weight: 700;
@@ -828,31 +829,6 @@ table {
   overflow-x: auto;
 }
 
-/* Monthly report */
-.small-note {
-  font-size: 13px;
-  margin: 0 0 8px;
-}
-
-.monthly-table .group-row > * {
-  background: var(--group-0);
-  font-weight: 700;
-}
-
-.monthly-table th.member {
-  padding-left: 26px;
-  font-weight: 400;
-}
-
-.monthly-table .week-start {
-  border-left: 2px solid var(--week-border);
-}
-
-.matrix td.cell.short {
-  background: var(--short-bg);
-  color: var(--short-text);
-  font-weight: 700;
-}
 
 /* Settings: team editor, vacations, highlighting */
 .team-editor {

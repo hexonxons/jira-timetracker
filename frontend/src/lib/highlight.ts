@@ -1,4 +1,4 @@
-// Which employee day cells get highlighted, and the monthly norm.
+// Which employee day cells get highlighted, and the norm for an employee's Total.
 import { dayColumn, periodDays } from "./calendar";
 import { isOnVacation, type VacationDays } from "./vacations";
 
