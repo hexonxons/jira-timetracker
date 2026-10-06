@@ -967,3 +967,12 @@ table {
 .icon-btn.small:hover {
   color: var(--error);
 }
+
+pre.format {
+  margin: 0 0 8px;
+  padding: 8px 10px;
+  background: var(--surface-2);
+  border-radius: 6px;
+  font-size: 12px;
+  overflow-x: auto;
+}

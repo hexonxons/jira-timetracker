@@ -11,10 +11,10 @@ import {
   normalizeTeams,
   removeTeam,
   removeUser,
-  teamsJson,
   type TeamsConfig,
 } from "../lib/teamsEdit";
-import { parseVacations, sortVacations, vacationsJson, type Vacation } from "../lib/vacations";
+import { sortVacations, type Vacation } from "../lib/vacations";
+import { parseWorkspace, workspaceJson } from "../lib/workspace";
 
 export function SettingsPage({
   settings,
@@ -24,25 +24,127 @@ export function SettingsPage({
   onVacations,
   range,
   onRange,
+  hasOwn,
 }: {
   settings: PublicSettings;
   /** The team config kept in this browser (overrides the instance default). */
   ownTeams: unknown | null;
   onOwnTeams: (config: unknown | null) => void;
   vacations: Vacation[];
-  onVacations: (v: Vacation[]) => void;
-  /** null = default (at least one person-day, no upper limit). */
-  range: DayRange | null;
+  /** null = back to the instance default. */
+  onVacations: (v: Vacation[] | null) => void;
+  range: DayRange;
   onRange: (r: DayRange | null) => void;
+  /** Whether this browser holds its own teams, vacations or highlighting. */
+  hasOwn: boolean;
 }) {
   const teams = normalizeTeams(ownTeams ?? settings.teamsConfig);
   return (
     <div className="page settings">
       <ConnectionCard settings={settings} />
+      <ConfigFileCard
+        settings={settings}
+        teams={teams}
+        vacations={vacations}
+        range={range}
+        hasOwn={hasOwn}
+        apply={(t, v, r) => {
+          if (t !== undefined) onOwnTeams(t);
+          if (v !== undefined) onVacations(v);
+          if (r !== undefined) onRange(r);
+        }}
+      />
       <TeamsCard settings={settings} ownTeams={ownTeams} onOwnTeams={onOwnTeams} />
       <VacationsCard vacations={vacations} onVacations={onVacations} teams={teams} />
-      <HighlightCard range={range} onRange={onRange} hoursPerPersonDay={settings.hoursPerPersonDay} />
+      <HighlightCard key={JSON.stringify(range)} range={range} onRange={onRange} />
     </div>
+  );
+}
+
+/** Upload / download of the single JSON with teams, vacations and highlighting. */
+function ConfigFileCard({
+  settings,
+  teams,
+  vacations,
+  range,
+  hasOwn,
+  apply,
+}: {
+  settings: PublicSettings;
+  teams: TeamsConfig;
+  vacations: Vacation[];
+  range: DayRange;
+  hasOwn: boolean;
+  apply: (teams?: unknown | null, vacations?: Vacation[] | null, range?: DayRange | null) => void;
+}) {
+  const [errors, setErrors] = useState<string[]>([]);
+  const [message, setMessage] = useState("");
+
+  async function upload(e: ChangeEvent<HTMLInputElement>) {
+    setErrors([]);
+    setMessage("");
+    try {
+      const file = await readJsonFile(e);
+      if (!file) return;
+      const parsed = parseWorkspace(file.data);
+      if (parsed.teams) {
+        try {
+          await api.validateTeams(parsed.teams);
+        } catch (err) {
+          parsed.errors.unshift(...errorText(err));
+        }
+      }
+      if (parsed.errors.length) {
+        setErrors(parsed.errors);
+        return;
+      }
+      apply(parsed.teams, parsed.vacations, parsed.highlight);
+      const loaded = [
+        parsed.teams && "teams",
+        parsed.vacations && `${parsed.vacations.length} vacation(s)`,
+        parsed.highlight !== undefined && "highlighting",
+      ].filter(Boolean);
+      setMessage(`Loaded ${loaded.join(", ")} from ${file.name}.`);
+    } catch (err) {
+      setErrors(errorText(err));
+    }
+  }
+
+  return (
+    <section className="card">
+      <h2>Configuration file</h2>
+      <p className="muted">
+        One JSON with teams, vacations and daily highlighting. Uploading applies only the sections the file has; they
+        are kept in this browser. The same file can serve as the instance default (<code>JTT_TEAMS_FILE</code>).
+      </p>
+      <pre className="format">{`{
+  "teams": [{"name": "Sensors", "users": ["dave", "eve"]}],
+  "vacations": [{"user": "dave", "from": "2026-09-21", "to": "2026-09-25"}],
+  "highlight": {"min": 6, "max": 11}
+}`}</pre>
+      <div className="actions">
+        <label className="button primary">
+          Upload JSON…
+          <input type="file" accept=".json,application/json" onChange={upload} hidden />
+        </label>
+        <button onClick={() => downloadText("jira-timetracker.json", workspaceJson(teams, vacations, range))}>
+          Download JSON
+        </button>
+        {hasOwn && (
+          <button
+            onClick={() => {
+              apply(null, null, null);
+              setErrors([]);
+              setMessage(settings.teamsConfig ? "Back to the instance defaults." : "Forgot your settings.");
+            }}
+          >
+            {settings.teamsConfig ? "Reset to instance defaults" : "Forget my settings"}
+          </button>
+        )}
+        {message && <span className="ok">{message}</span>}
+      </div>
+      <ErrorList errors={errors} title="The file was rejected:" />
+    </section>
   );
 }
 
@@ -150,7 +252,6 @@ function TeamsCard({
   const [newTeam, setNewTeam] = useState("");
   const usingOwn = ownTeams !== null;
   const config = normalizeTeams(usingOwn ? ownTeams : settings.teamsConfig);
-  const hasConfig = usingOwn || settings.teamsConfig !== null;
 
   /** Every edit becomes this browser's own config (the instance default is read-only). */
   function edit(change: (c: TeamsConfig) => TeamsConfig, done: string) {
@@ -163,20 +264,6 @@ function TeamsCard({
       setMessage("");
       setErrors(errorText(err));
       return false;
-    }
-  }
-
-  async function upload(e: ChangeEvent<HTMLInputElement>) {
-    setErrors([]);
-    setMessage("");
-    try {
-      const file = await readJsonFile(e);
-      if (!file) return;
-      await api.validateTeams(file.data);
-      onOwnTeams(file.data);
-      setMessage(`Loaded ${file.name}.`);
-    } catch (err) {
-      setErrors(errorText(err));
     }
   }
 
@@ -193,7 +280,7 @@ function TeamsCard({
 
   return (
     <section className="card">
-      <h2>Team config</h2>
+      <h2>Teams</h2>
       <p className="muted">
         Each user must belong to exactly one team; people not listed are excluded from reports. Changes apply to the
         next report you generate.
@@ -202,30 +289,10 @@ function TeamsCard({
         {usingOwn
           ? "Using your own config. It is kept in this browser only and sent with each report request."
           : settings.teamsConfig
-            ? "Using the instance default config. Editing or uploading creates your own copy in this browser."
-            : "This instance has no default config: upload or create yours. It is kept in this browser only."}
+            ? "Using the instance default config. Editing creates your own copy in this browser."
+            : "This instance has no default config: upload a configuration file or create teams below."}
       </p>
-      <div className="actions">
-        <label className="button primary">
-          Upload JSON…
-          <input type="file" accept=".json,application/json" onChange={upload} hidden />
-        </label>
-        <button disabled={!hasConfig} onClick={() => downloadText("teams.json", teamsJson(config))}>
-          Download JSON
-        </button>
-        {usingOwn && (
-          <button
-            onClick={() => {
-              onOwnTeams(null);
-              setMessage("");
-              setErrors([]);
-            }}
-          >
-            {settings.teamsConfig ? "Use instance default" : "Forget my config"}
-          </button>
-        )}
-        {message && <span className="ok">{message}</span>}
-      </div>
+      {message && <p className="ok">{message}</p>}
       <ErrorList errors={errors} />
       <div className="team-editor">
         {config.teams.map((t) => (
@@ -286,7 +353,7 @@ function VacationsCard({
   teams,
 }: {
   vacations: Vacation[];
-  onVacations: (v: Vacation[]) => void;
+  onVacations: (v: Vacation[] | null) => void;
   teams: TeamsConfig;
 }) {
   const users = teams.teams.flatMap((t) => t.users).sort((a, b) => a.localeCompare(b));
@@ -308,31 +375,13 @@ function VacationsCard({
     setMessage(`Added a vacation for ${form.user}.`);
   };
 
-  async function upload(e: ChangeEvent<HTMLInputElement>) {
-    setErrors([]);
-    setMessage("");
-    try {
-      const file = await readJsonFile(e);
-      if (!file) return;
-      const parsed = parseVacations(file.data);
-      if (parsed.errors.length) {
-        setErrors(parsed.errors);
-        return;
-      }
-      onVacations(parsed.vacations);
-      setMessage(`Loaded ${parsed.vacations.length} vacation(s) from ${file.name}; the previous list was replaced.`);
-    } catch (err) {
-      setErrors(errorText(err));
-    }
-  }
-
   const inTeams = new Set(users.map((u) => u.toLowerCase()));
   return (
     <section className="card">
       <h2>Vacations</h2>
       <p className="muted">
-        Vacation working days are shown in green and excluded from the monthly norm. Kept in this browser only; use
-        Download / Upload to share them.
+        Vacation working days are shown in green and excluded from the monthly norm. Kept in this browser; share them
+        with the configuration file.
       </p>
       <form className="vacation-form" onSubmit={add}>
         <select value={form.user} onChange={(e) => setForm({ ...form, user: e.target.value })}>
@@ -349,16 +398,7 @@ function VacationsCard({
           Add
         </button>
       </form>
-      <div className="actions">
-        <label className="button">
-          Upload JSON…
-          <input type="file" accept=".json,application/json" onChange={upload} hidden />
-        </label>
-        <button disabled={!vacations.length} onClick={() => downloadText("vacations.json", vacationsJson(vacations))}>
-          Download JSON
-        </button>
-        {message && <span className="ok">{message}</span>}
-      </div>
+      {message && <p className="ok">{message}</p>}
       <ErrorList errors={errors} />
       {vacations.length ? (
         <div className="table-scroll">
@@ -404,17 +444,8 @@ function VacationsCard({
   );
 }
 
-function HighlightCard({
-  range,
-  onRange,
-  hoursPerPersonDay,
-}: {
-  range: DayRange | null;
-  onRange: (r: DayRange | null) => void;
-  hoursPerPersonDay: number;
-}) {
-  const effective = range ?? { min: hoursPerPersonDay, max: null };
-  const [form, setForm] = useState({ min: String(effective.min), max: effective.max === null ? "" : String(effective.max) });
+function HighlightCard({ range, onRange }: { range: DayRange; onRange: (r: DayRange | null) => void }) {
+  const [form, setForm] = useState({ min: String(range.min), max: range.max === null ? "" : String(range.max) });
   const [errors, setErrors] = useState<string[]>([]);
   const [message, setMessage] = useState("");
 
@@ -465,12 +496,8 @@ function HighlightCard({
           </button>
           <button
             type="button"
-            onClick={() => {
-              onRange(null);
-              setForm({ min: String(hoursPerPersonDay), max: "" });
-              setErrors([]);
-              setMessage("Reset to at least one person-day.");
-            }}
+            title="Back to the instance default, or at least one person-day"
+            onClick={() => onRange(null)}
           >
             Reset
           </button>

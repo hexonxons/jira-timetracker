@@ -80,3 +80,37 @@ describe("team editing", () => {
     expect(removeTeam(config, "A").teams.map((t) => t.name)).toEqual(["B"]);
   });
 });
+
+import { instanceDefaults, parseWorkspace, workspaceJson } from "./workspace";
+
+describe("workspace file", () => {
+  it("round-trips teams, vacations and highlighting", () => {
+    const json = workspaceJson(
+      { teams: [{ name: "A", users: ["alice"] }] },
+      [{ user: "alice", from: "2026-09-07", to: "2026-09-08" }],
+      { min: 6, max: 11 },
+    );
+    const parsed = parseWorkspace(JSON.parse(json));
+    expect(parsed.errors).toEqual([]);
+    expect(parsed.teams).toEqual({ teams: [{ name: "A", users: ["alice"] }] });
+    expect(parsed.vacations).toHaveLength(1);
+    expect(parsed.highlight).toEqual({ min: 6, max: 11 });
+  });
+
+  it("applies only the sections present and reports bad ones", () => {
+    const teamsOnly = parseWorkspace({ teams: [] });
+    expect("vacations" in teamsOnly).toBe(false);
+    expect("highlight" in teamsOnly).toBe(false);
+    expect(parseWorkspace({ highlight: { min: 9, max: 7 } }).errors).toHaveLength(1);
+    expect(parseWorkspace({ highlight: { min: 6 } }).highlight).toEqual({ min: 6, max: null });
+    expect(parseWorkspace({ other: 1 }).errors).toHaveLength(1);
+    expect(parseWorkspace([]).errors).toHaveLength(1);
+  });
+
+  it("reads instance defaults next to teams", () => {
+    const d = instanceDefaults({ teams: [], vacations: [{ user: "a", from: "2026-01-01", to: "2026-01-02" }] });
+    expect(d.vacations).toHaveLength(1);
+    expect(d.highlight).toBe(null);
+    expect(instanceDefaults(null)).toEqual({ vacations: null, highlight: null });
+  });
+});

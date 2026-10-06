@@ -6,9 +6,10 @@ import { enrich, type Dim } from "./lib/aggregate";
 import { visibleDays } from "./lib/calendar";
 import { UNITS, type Unit } from "./lib/format";
 import type { DayRange } from "./lib/highlight";
-import { readPref, writePref } from "./lib/prefs";
+import { readPref, removePref, writePref } from "./lib/prefs";
 import { loadOwnTeams, saveOwnTeams } from "./lib/teamsStore";
 import { parseVacations, vacationDays, type Vacation } from "./lib/vacations";
+import { instanceDefaults, isRange } from "./lib/workspace";
 import { MonthlyPage } from "./pages/MonthlyPage";
 import { SettingsPage } from "./pages/SettingsPage";
 import { SummaryPage } from "./pages/SummaryPage";
@@ -69,9 +70,6 @@ function monthBounds(offset = 0): { start: string; end: string } {
   return { start: `${y}-${pad(m)}-01`, end: `${y}-${pad(m)}-${pad(last)}` };
 }
 
-const isRange = (v: unknown): v is DayRange =>
-  typeof (v as DayRange)?.min === "number" &&
-  ((v as DayRange).max === null || typeof (v as DayRange).max === "number");
 
 export function App() {
   const [page, setPage] = useState(currentPage);
@@ -88,18 +86,21 @@ export function App() {
     setUnit(u);
     writePref("jtt.unit", u);
   };
-  const [vacations, setVacations] = useState<Vacation[]>(
-    () => parseVacations(readPref<unknown>("jtt.vacations", { vacations: [] }, (_v): _v is unknown => true)).vacations,
-  );
-  const updateVacations = (v: Vacation[]) => {
-    setVacations(v);
-    writePref("jtt.vacations", { vacations: v });
+  // Vacations and highlighting: the user's own (kept in this browser) or the instance defaults.
+  const [ownVacations, setOwnVacations] = useState<Vacation[] | null>(() => {
+    const stored = readPref<unknown>("jtt.vacations", null, (_v): _v is unknown => true);
+    return stored === null ? null : parseVacations(stored).vacations;
+  });
+  const updateVacations = (v: Vacation[] | null) => {
+    setOwnVacations(v);
+    if (v === null) removePref("jtt.vacations");
+    else writePref("jtt.vacations", { vacations: v });
   };
-  const vacationsByUser = useMemo(() => vacationDays(vacations), [vacations]);
   const [rangePref, setRangePref] = useState<DayRange | null>(() => readPref<DayRange | null>("jtt.dayRange", null, isRange));
   const updateRange = (r: DayRange | null) => {
     setRangePref(r);
-    writePref("jtt.dayRange", r);
+    if (r === null) removePref("jtt.dayRange");
+    else writePref("jtt.dayRange", r);
   };
   const updateOwnTeams = (config: unknown | null) => {
     setOwnTeams(config);
@@ -150,7 +151,10 @@ export function App() {
     [dataset, entries],
   );
   const hpd = settings?.hoursPerPersonDay ?? dataset?.meta.hoursPerPersonDay ?? 8;
-  const range: DayRange = rangePref ?? { min: hpd, max: null };
+  const defaults = useMemo(() => instanceDefaults(settings?.teamsConfig), [settings]);
+  const vacations = ownVacations ?? defaults.vacations ?? [];
+  const vacationsByUser = useMemo(() => vacationDays(vacations), [vacations]);
+  const range: DayRange = rangePref ?? defaults.highlight ?? { min: hpd, max: null };
   const running = job?.status === "running";
   const view = PAGES[page];
   const hasTeams = Boolean(ownTeams || settings?.teamsConfig);
@@ -228,8 +232,9 @@ export function App() {
             onOwnTeams={updateOwnTeams}
             vacations={vacations}
             onVacations={updateVacations}
-            range={rangePref}
+            range={range}
             onRange={updateRange}
+            hasOwn={ownTeams !== null || ownVacations !== null || rangePref !== null}
           />
         )}
 
