@@ -5,8 +5,11 @@ import { ErrorList } from "./components/ErrorList";
 import { enrich, type Dim } from "./lib/aggregate";
 import { visibleDays } from "./lib/calendar";
 import { UNITS, type Unit } from "./lib/format";
+import type { DayRange } from "./lib/highlight";
 import { readPref, writePref } from "./lib/prefs";
 import { loadOwnTeams, saveOwnTeams } from "./lib/teamsStore";
+import { parseVacations, vacationDays, type Vacation } from "./lib/vacations";
+import { MonthlyPage } from "./pages/MonthlyPage";
 import { SettingsPage } from "./pages/SettingsPage";
 import { SummaryPage } from "./pages/SummaryPage";
 import type { Dataset } from "./types";
@@ -19,7 +22,7 @@ interface CalendarView {
   defaultDepth: number;
 }
 
-const PAGES: Record<string, CalendarView | { kind: "summary" | "settings"; title: string; hint: string }> = {
+const PAGES: Record<string, CalendarView | { kind: "summary" | "monthly" | "settings"; title: string; hint: string }> = {
   "people-issues": {
     kind: "calendar",
     title: "People / Issues",
@@ -42,6 +45,11 @@ const PAGES: Record<string, CalendarView | { kind: "summary" | "settings"; title
     defaultDepth: 1,
   },
   summary: { kind: "summary", title: "Summary", hint: "Totals for the whole period." },
+  monthly: {
+    kind: "monthly",
+    title: "Monthly",
+    hint: "Time logged per person by week, against the norm. Pick a whole month for a monthly report.",
+  },
   settings: { kind: "settings", title: "Settings", hint: "" },
 };
 
@@ -50,19 +58,25 @@ function currentPage(): string {
   return id in PAGES ? id : "people-issues";
 }
 
-function monthBounds(): { start: string; end: string } {
+/** The whole calendar month, `offset` months from the current one. */
+function monthBounds(offset = 0): { start: string; end: string } {
   const now = new Date();
+  const first = new Date(now.getFullYear(), now.getMonth() + offset, 1);
   const pad = (n: number) => String(n).padStart(2, "0");
-  const y = now.getFullYear();
-  const m = now.getMonth() + 1;
+  const y = first.getFullYear();
+  const m = first.getMonth() + 1;
   const last = new Date(y, m, 0).getDate();
   return { start: `${y}-${pad(m)}-01`, end: `${y}-${pad(m)}-${pad(last)}` };
 }
 
+const isRange = (v: unknown): v is DayRange =>
+  typeof (v as DayRange)?.min === "number" &&
+  ((v as DayRange).max === null || typeof (v as DayRange).max === "number");
+
 export function App() {
   const [page, setPage] = useState(currentPage);
   const [settings, setSettings] = useState<PublicSettings | null>(null);
-  const [period, setPeriod] = useState(monthBounds);
+  const [period, setPeriod] = useState(() => monthBounds());
   const [job, setJob] = useState<ReportJob | null>(null);
   const [errors, setErrors] = useState<string[]>([]);
   const [dataset, setDataset] = useState<Dataset | null>(null);
@@ -73,6 +87,19 @@ export function App() {
   const updateUnit = (u: Unit) => {
     setUnit(u);
     writePref("jtt.unit", u);
+  };
+  const [vacations, setVacations] = useState<Vacation[]>(
+    () => parseVacations(readPref<unknown>("jtt.vacations", { vacations: [] }, (_v): _v is unknown => true)).vacations,
+  );
+  const updateVacations = (v: Vacation[]) => {
+    setVacations(v);
+    writePref("jtt.vacations", { vacations: v });
+  };
+  const vacationsByUser = useMemo(() => vacationDays(vacations), [vacations]);
+  const [rangePref, setRangePref] = useState<DayRange | null>(() => readPref<DayRange | null>("jtt.dayRange", null, isRange));
+  const updateRange = (r: DayRange | null) => {
+    setRangePref(r);
+    writePref("jtt.dayRange", r);
   };
   const updateOwnTeams = (config: unknown | null) => {
     setOwnTeams(config);
@@ -123,6 +150,7 @@ export function App() {
     [dataset, entries],
   );
   const hpd = settings?.hoursPerPersonDay ?? dataset?.meta.hoursPerPersonDay ?? 8;
+  const range: DayRange = rangePref ?? { min: hpd, max: null };
   const running = job?.status === "running";
   const view = PAGES[page];
   const hasTeams = Boolean(ownTeams || settings?.teamsConfig);
@@ -155,6 +183,8 @@ export function App() {
             To
             <input type="date" value={period.end} onChange={(e) => setPeriod({ ...period, end: e.target.value })} />
           </label>
+          <button onClick={() => setPeriod(monthBounds())}>This month</button>
+          <button onClick={() => setPeriod(monthBounds(-1))}>Last month</button>
           <button className="primary" onClick={generate} disabled={running || !period.start || !period.end}>
             {running ? "Loading…" : "Generate"}
           </button>
@@ -192,7 +222,15 @@ export function App() {
         )}
 
         {view.kind === "settings" && settings && (
-          <SettingsPage settings={settings} ownTeams={ownTeams} onOwnTeams={updateOwnTeams} />
+          <SettingsPage
+            settings={settings}
+            ownTeams={ownTeams}
+            onOwnTeams={updateOwnTeams}
+            vacations={vacations}
+            onVacations={updateVacations}
+            range={rangePref}
+            onRange={updateRange}
+          />
         )}
 
         {view.kind !== "settings" && dataset && (
@@ -213,6 +251,18 @@ export function App() {
                 hoursPerPersonDay={hpd}
                 unit={unit}
                 onUnitChange={updateUnit}
+                vacations={vacationsByUser}
+                range={range}
+              />
+            ) : view.kind === "monthly" ? (
+              <MonthlyPage
+                key={dataset.meta.generatedAt}
+                dataset={dataset}
+                entries={entries}
+                hoursPerPersonDay={hpd}
+                unit={unit}
+                onUnitChange={updateUnit}
+                vacations={vacationsByUser}
               />
             ) : (
               <SummaryPage
@@ -248,6 +298,7 @@ function Caveats({ dataset }: { dataset: Dataset }) {
         <li>Only issues and worklogs visible to the Personal Access Token owner are included.</li>
         <li>A worklog's day is the date of its start time, as Jira reports it for the token owner's time zone.</li>
         <li>Weekends are hidden unless someone logged time on them (then shown shaded). Holidays are not handled.</li>
+        <li>Team edits in Settings apply to the next report you generate; vacations and highlighting apply at once.</li>
         {dataset.meta.warnings.map((w, i) => (
           <li key={i} className="warn">
             {w}

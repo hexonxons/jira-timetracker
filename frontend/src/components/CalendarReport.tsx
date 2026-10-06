@@ -2,11 +2,15 @@ import { useCallback, useMemo, useRef, useState, type CSSProperties, type Pointe
 import { buildTree, dailyTotals, idsToDepth, sumSeconds, type Dim, type Entry, type RowNode } from "../lib/aggregate";
 import { todayIso, type DayColumn } from "../lib/calendar";
 import { formatValue, type Unit } from "../lib/format";
+import { dayMark, rangeLabel, type DayMark, type DayRange } from "../lib/highlight";
+import { isOnVacation, type VacationDays } from "../lib/vacations";
 import { readPref, writePref } from "../lib/prefs";
 import type { Dataset } from "../types";
 import { DrillPanel, type DrillTarget } from "./DrillPanel";
 import { IssueLink } from "./IssueLink";
 import { UnitToggle } from "./UnitToggle";
+
+const markClass: Record<string, string> = { under: "short", over: "short", vacation: "vacation" };
 
 const LABEL_WIDTH = { key: "jtt.labelWidth", default: 340, min: 160, max: 900 };
 const clampWidth = (w: number) => Math.round(Math.min(LABEL_WIDTH.max, Math.max(LABEL_WIDTH.min, w)));
@@ -51,6 +55,8 @@ export function CalendarReport({
   hoursPerPersonDay,
   unit,
   onUnitChange,
+  vacations,
+  range,
 }: {
   dataset: Dataset;
   entries: Entry[];
@@ -60,15 +66,30 @@ export function CalendarReport({
   hoursPerPersonDay: number;
   unit: Unit;
   onUnitChange: (u: Unit) => void;
+  vacations: VacationDays;
+  range: DayRange;
 }) {
   const fmt = (seconds: number, whole = 0) => formatValue(seconds, unit, hoursPerPersonDay, whole);
-  const personDay = hoursPerPersonDay * 3600;
   const today = todayIso();
   // An employee row holds the person's whole day only when no SD Track level sits above it.
   const employeeHasWholeDay = !dims.includes("track") || dims.indexOf("employee") < dims.indexOf("track");
-  /** Past working day on which the employee logged less than a person-day (nothing counts too). */
-  const isShort = (n: RowNode, d: DayColumn, seconds: number) =>
-    employeeHasWholeDay && n.dim === "employee" && !d.weekend && d.date < today && seconds < personDay;
+  /**
+   * Employee cells: vacation (green) in every view; red outside the allowed daily range only
+   * where the employee row holds the person's whole day.
+   */
+  const markOf = (n: RowNode, d: DayColumn, seconds: number): DayMark => {
+    if (n.dim !== "employee" || !n.member) return null;
+    const vacation = isOnVacation(vacations, n.member.username, d.date);
+    const mark = dayMark({ date: d.date, weekend: d.weekend, today, seconds, vacation, range });
+    return mark === "vacation" || employeeHasWholeDay ? mark : null;
+  };
+  const markTitle = (mark: DayMark, seconds: number) => {
+    const logged = formatValue(seconds, "hours", hoursPerPersonDay) || "Nothing";
+    if (mark === "vacation") return `Vacation${seconds ? ` (${logged} logged)` : ""}`;
+    if (mark === "under") return `${logged} logged, less than ${range.min}h`;
+    if (mark === "over") return `${logged} logged, more than ${range.max}h`;
+    return undefined;
+  };
   const labelWidth = useLabelWidth();
   const tree = useMemo(() => buildTree(dataset, entries, dims), [dataset, entries, dims]);
   const [expanded, setExpanded] = useState(() => idsToDepth(tree, defaultDepth));
@@ -117,11 +138,14 @@ export function CalendarReport({
           ))}
         </div>
         <UnitToggle unit={unit} onChange={onUnitChange} hoursPerPersonDay={hoursPerPersonDay} />
-        {employeeHasWholeDay && (
-          <span className="legend">
-            <span className="swatch short" /> less than 1 person-day on a past working day
-          </span>
-        )}
+        <span className="legend">
+          {employeeHasWholeDay && (
+            <>
+              <span className="swatch short" /> {rangeLabel(range)} a day
+            </>
+          )}
+          <span className="swatch vacation" /> vacation
+        </span>
       </div>
       <div className="calendar-wrap" style={{ "--label-width": `${labelWidth.width}px` } as CSSProperties}>
         <table className="calendar">
@@ -179,8 +203,8 @@ export function CalendarReport({
                     return (
                       <td
                         key={d.date}
-                        className={`cell ${d.weekend ? "weekend" : ""} ${d.weekStart ? "week-start" : ""} ${v ? "has" : ""} ${isShort(n, d, v) ? "short" : ""}`}
-                        title={isShort(n, d, v) ? `${formatValue(v, "hours", hoursPerPersonDay) || "Nothing"} logged, less than 1 person-day (${hoursPerPersonDay}h)` : undefined}
+                        className={`cell ${d.weekend ? "weekend" : ""} ${d.weekStart ? "week-start" : ""} ${v ? "has" : ""} ${markClass[String(markOf(n, d, v))] ?? ""}`}
+                        title={markTitle(markOf(n, d, v), v)}
                         onClick={v ? () => open(n, d.date) : undefined}
                       >
                         {fmt(v, teamNode(n)?.byDay.get(d.date))}

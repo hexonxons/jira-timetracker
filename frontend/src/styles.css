@@ -11,6 +11,8 @@
   --week-border: #8a93a3;
   --short-bg: #fde2e1;
   --short-text: #b42318;
+  --vacation-bg: #dcf3e3;
+  --vacation-text: #1f7a4d;
   --group-0: #e9edf3;
   --group-1: #f4f6f9;
   --error-bg: #fdecec;
@@ -38,6 +40,8 @@
     --week-border: #7b8494;
     --short-bg: #4a1f1f;
     --short-text: #ffb4ab;
+    --vacation-bg: #173a26;
+    --vacation-text: #8fe0b0;
     --group-0: #262c37;
     --group-1: #20252e;
     --error-bg: #3a1d1d;
@@ -654,7 +658,7 @@ table {
 
 .settings {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(340px, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(min(440px, 100%), 1fr));
   gap: 16px;
   align-items: start;
 }
@@ -802,4 +806,164 @@ table {
 .swatch.short {
   background: var(--short-bg);
   border: 1px solid var(--short-text);
+}
+
+/* Vacation days of an employee. */
+.calendar tbody tr > td.cell.vacation,
+.matrix td.vacation {
+  background: var(--vacation-bg);
+  color: var(--vacation-text);
+}
+
+.swatch.vacation {
+  background: var(--vacation-bg);
+  border: 1px solid var(--vacation-text);
+}
+
+.legend .swatch:not(:first-child) {
+  margin-left: 10px;
+}
+
+.table-scroll {
+  overflow-x: auto;
+}
+
+/* Monthly report */
+.small-note {
+  font-size: 13px;
+  margin: 0 0 8px;
+}
+
+.monthly-table .group-row > * {
+  background: var(--group-0);
+  font-weight: 700;
+}
+
+.monthly-table th.member {
+  padding-left: 26px;
+  font-weight: 400;
+}
+
+.monthly-table .week-start {
+  border-left: 2px solid var(--week-border);
+}
+
+.matrix td.cell.short {
+  background: var(--short-bg);
+  color: var(--short-text);
+  font-weight: 700;
+}
+
+/* Settings: team editor, vacations, highlighting */
+.team-editor {
+  display: grid;
+  gap: 10px;
+  margin-top: 8px;
+}
+
+.team-block {
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 8px 10px;
+}
+
+.team-head {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  margin-bottom: 6px;
+}
+
+.team-head .link-btn {
+  margin-left: auto;
+}
+
+.chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  align-items: center;
+}
+
+.user-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  padding: 2px 4px 2px 10px;
+  border-radius: 14px;
+  background: var(--surface-2);
+}
+
+.user-chip button {
+  border: 0;
+  background: none;
+  padding: 0 6px;
+  color: var(--muted);
+  font-size: 16px;
+  line-height: 1;
+}
+
+.user-chip button:hover {
+  color: var(--error);
+}
+
+.inline-form {
+  display: inline-flex;
+  gap: 6px;
+}
+
+.inline-form input {
+  width: 160px;
+}
+
+.link-btn {
+  border: 0;
+  background: none;
+  padding: 0;
+  color: var(--accent);
+  font-size: 13px;
+}
+
+.vacation-form {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-bottom: 4px;
+}
+
+.vacation-form select {
+  font: inherit;
+  color: inherit;
+  border: 1px solid var(--border);
+  background: var(--surface);
+  border-radius: 6px;
+  padding: 6px 8px;
+}
+
+.vacations-table {
+  width: 100%;
+  margin-top: 8px;
+}
+
+.range-inputs {
+  display: flex;
+  gap: 12px;
+}
+
+.range-inputs input {
+  width: 110px;
+}
+
+.vacations-table th,
+.vacations-table td {
+  padding: 4px 8px;
+}
+
+.icon-btn.small {
+  font-size: 18px;
+  color: var(--muted);
+}
+
+.icon-btn.small:hover {
+  color: var(--error);
 }
