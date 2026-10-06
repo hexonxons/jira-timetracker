@@ -53,7 +53,15 @@ export interface ReportJob {
   dataset: Dataset | null;
 }
 
+export interface JiraUser {
+  username: string;
+  displayName: string;
+  active: boolean;
+}
+
 export const api = {
+  lookupUsers: (usernames: string[]) =>
+    call<{ users: Record<string, JiraUser | null> }>("POST", "/api/users/lookup", { usernames }),
   getSettings: () => call<PublicSettings>("GET", "/api/settings"),
   testConnection: () => call<ConnectionInfo>("POST", "/api/settings/test"),
   validateTeams: (config: unknown) => call<TeamsSummary>("POST", "/api/teams/validate", config),

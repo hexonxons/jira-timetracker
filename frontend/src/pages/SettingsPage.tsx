@@ -1,5 +1,5 @@
 import { useState, type ChangeEvent, type FormEvent } from "react";
-import { api, ApiError, type ConnectionInfo, type PublicSettings } from "../api";
+import { api, ApiError, type ConnectionInfo, type JiraUser, type PublicSettings } from "../api";
 import { ErrorList } from "../components/ErrorList";
 import { dayColumn, periodDays } from "../lib/calendar";
 import { downloadText } from "../lib/download";
@@ -13,6 +13,7 @@ import {
   removeUser,
   type TeamsConfig,
 } from "../lib/teamsEdit";
+import { lookupUser, useUserNames } from "../lib/userNames";
 import { sortVacations, type Vacation } from "../lib/vacations";
 import { parseWorkspace, workspaceJson } from "../lib/workspace";
 
@@ -54,9 +55,14 @@ export function SettingsPage({
           if (r !== undefined) onRange(r);
         }}
       />
-      <TeamsCard settings={settings} ownTeams={ownTeams} onOwnTeams={onOwnTeams} />
-      <VacationsCard vacations={vacations} onVacations={onVacations} teams={teams} />
       <HighlightCard key={JSON.stringify(range)} range={range} onRange={onRange} />
+      <TeamsCard
+        settings={settings}
+        ownTeams={ownTeams}
+        onOwnTeams={onOwnTeams}
+        vacations={vacations}
+        onVacations={onVacations}
+      />
     </div>
   );
 }
@@ -237,28 +243,53 @@ function ConnectionCard({ settings }: { settings: PublicSettings }) {
   );
 }
 
+function workingDays(v: Vacation): number {
+  return periodDays(v.from, v.to).filter((d) => !dayColumn(d).weekend).length;
+}
+
+/** "Sep 7–8", "Sep 30 – Oct 2", with the year when it is not the current one. */
+function vacationLabel(v: Vacation): string {
+  const year = String(new Date().getFullYear());
+  const a = dayColumn(v.from);
+  const b = dayColumn(v.to);
+  const suffix = v.to.slice(0, 4) !== year ? ` ${v.to.slice(0, 4)}` : "";
+  if (v.from === v.to) return a.label + suffix;
+  const [am] = a.label.split(" ");
+  const [bm, bd] = b.label.split(" ");
+  return (am === bm && v.from.slice(0, 4) === v.to.slice(0, 4) ? `${a.label}–${bd}` : `${a.label} – ${b.label}`) + suffix;
+}
+
 function TeamsCard({
   settings,
   ownTeams,
   onOwnTeams,
+  vacations,
+  onVacations,
 }: {
   settings: PublicSettings;
   ownTeams: unknown | null;
   onOwnTeams: (config: unknown | null) => void;
+  vacations: Vacation[];
+  onVacations: (v: Vacation[] | null) => void;
 }) {
   const [errors, setErrors] = useState<string[]>([]);
   const [message, setMessage] = useState("");
   const [newUser, setNewUser] = useState<Record<string, string>>({});
   const [newTeam, setNewTeam] = useState("");
+  const [busy, setBusy] = useState(false);
   const usingOwn = ownTeams !== null;
   const config = normalizeTeams(usingOwn ? ownTeams : settings.teamsConfig);
+  const allUsers = config.teams.flatMap((t) => t.users);
+  const names = useUserNames([...allUsers, ...vacations.map((v) => v.user)]);
+
+  const say = (done: string) => setMessage(usingOwn ? done : `${done} Saved as your own config in this browser.`);
 
   /** Every edit becomes this browser's own config (the instance default is read-only). */
   function edit(change: (c: TeamsConfig) => TeamsConfig, done: string) {
     setErrors([]);
     try {
       onOwnTeams(change(config));
-      setMessage(usingOwn ? done : `${done} Saved as your own config in this browser.`);
+      say(done);
       return true;
     } catch (err) {
       setMessage("");
@@ -267,10 +298,36 @@ function TeamsCard({
     }
   }
 
-  const addMember = (team: string) => (e: FormEvent) => {
+  const addMember = (team: string) => async (e: FormEvent) => {
     e.preventDefault();
-    const user = newUser[team] ?? "";
-    if (edit((c) => addUser(c, team, user), `Added ${user.trim()} to ${team}.`)) setNewUser({ ...newUser, [team]: "" });
+    const user = (newUser[team] ?? "").trim();
+    setErrors([]);
+    setMessage("");
+    let next: TeamsConfig;
+    try {
+      next = addUser(config, team, user);
+    } catch (err) {
+      setErrors(errorText(err));
+      return;
+    }
+    setBusy(true);
+    try {
+      const found = await lookupUser(user);
+      if (!found) {
+        setErrors([`User "${user}" was not found in Jira. Use the Jira username (login), not the display name.`]);
+        return;
+      }
+      onOwnTeams(next);
+      setNewUser({ ...newUser, [team]: "" });
+      say(`Added ${found.displayName} (${user}) to ${team}.`);
+    } catch (err) {
+      // Jira unreachable: keep the edit, report generation will validate the user anyway.
+      onOwnTeams(next);
+      setNewUser({ ...newUser, [team]: "" });
+      setMessage(`Added ${user} to ${team}, but could not check it in Jira: ${errorText(err).join("; ")}`);
+    } finally {
+      setBusy(false);
+    }
   };
 
   const createTeam = (e: FormEvent) => {
@@ -278,12 +335,22 @@ function TeamsCard({
     if (edit((c) => addTeam(c, newTeam), `Added team ${newTeam.trim()}.`)) setNewTeam("");
   };
 
+  const addVacation = (v: Vacation) => {
+    onVacations(sortVacations([...vacations, v]));
+    setErrors([]);
+    setMessage(`Added a vacation for ${names.get(v.user)?.displayName ?? v.user}: ${vacationLabel(v)}.`);
+  };
+  const deleteVacation = (v: Vacation) => onVacations(vacations.filter((x) => x !== v));
+  const vacationsOf = (user: string) => vacations.filter((v) => v.user.toLowerCase() === user.toLowerCase());
+  const inTeams = new Set(allUsers.map((u) => u.toLowerCase()));
+  const orphanVacations = vacations.filter((v) => !inTeams.has(v.user.toLowerCase()));
+
   return (
-    <section className="card">
+    <section className="card teams-card">
       <h2>Teams</h2>
       <p className="muted">
-        Each user must belong to exactly one team; people not listed are excluded from reports. Changes apply to the
-        next report you generate.
+        Each user must belong to exactly one team; people not listed are excluded from reports. Team changes apply to
+        the next report you generate; vacations (green in reports, excluded from the norm) apply at once.
       </p>
       <p className="muted">
         {usingOwn
@@ -294,6 +361,7 @@ function TeamsCard({
       </p>
       {message && <p className="ok">{message}</p>}
       <ErrorList errors={errors} />
+      {names.error && <p className="muted warn-text">Names could not be loaded from Jira: {names.error}</p>}
       <div className="team-editor">
         {config.teams.map((t) => (
           <div key={t.name} className="team-block">
@@ -310,137 +378,160 @@ function TeamsCard({
                 Remove team
               </button>
             </div>
-            <div className="chips">
+            <ul className="members">
               {t.users.map((u) => (
-                <span key={u} className="user-chip">
-                  {u}
-                  <button
-                    aria-label={`Remove ${u} from ${t.name}`}
-                    title="Remove from team"
-                    onClick={() => edit((c) => removeUser(c, t.name, u), `Removed ${u} from ${t.name}.`)}
-                  >
-                    ×
-                  </button>
-                </span>
-              ))}
-              <form className="inline-form" onSubmit={addMember(t.name)}>
-                <input
-                  placeholder="jira.username"
-                  value={newUser[t.name] ?? ""}
-                  onChange={(e) => setNewUser({ ...newUser, [t.name]: e.target.value })}
+                <MemberRow
+                  key={u}
+                  username={u}
+                  user={names.get(u)}
+                  vacations={vacationsOf(u)}
+                  onRemove={() => edit((c) => removeUser(c, t.name, u), `Removed ${names.get(u)?.displayName ?? u} from ${t.name}.`)}
+                  onAddVacation={(from, to) => addVacation({ user: u, from, to })}
+                  onDeleteVacation={deleteVacation}
                 />
-                <button type="submit">Add</button>
-              </form>
-            </div>
+              ))}
+            </ul>
+            <form className="inline-form" onSubmit={addMember(t.name)}>
+              <input
+                placeholder="jira.username"
+                value={newUser[t.name] ?? ""}
+                onChange={(e) => setNewUser({ ...newUser, [t.name]: e.target.value })}
+              />
+              <button type="submit" disabled={busy}>
+                Add person
+              </button>
+            </form>
           </div>
         ))}
         <form className="inline-form" onSubmit={createTeam}>
           <input placeholder="New team name" value={newTeam} onChange={(e) => setNewTeam(e.target.value)} />
           <button type="submit">Add team</button>
         </form>
+        {orphanVacations.length > 0 && (
+          <div className="team-block">
+            <div className="team-head">
+              <strong>Vacations of people not in any team</strong>
+            </div>
+            <ul className="members">
+              {orphanVacations.map((v, i) => (
+                <li key={`${v.user}-${v.from}-${i}`} className="member">
+                  <span className="member-name">
+                    {names.get(v.user) ? (
+                      <>
+                        {names.get(v.user)!.displayName} <span className="muted">{v.user}</span>
+                      </>
+                    ) : (
+                      v.user
+                    )}
+                  </span>
+                  <span className="vacations">
+                    <VacationChip v={v} onDelete={() => deleteVacation(v)} />
+                  </span>
+                </li>
+              ))}
+            </ul>
+          </div>
+        )}
       </div>
     </section>
   );
 }
 
-function workingDays(v: Vacation): number {
-  return periodDays(v.from, v.to).filter((d) => !dayColumn(d).weekend).length;
+function VacationChip({ v, onDelete }: { v: Vacation; onDelete: () => void }) {
+  const days = workingDays(v);
+  return (
+    <span className="vacation-chip" title={`${v.from} – ${v.to}, ${days} working day(s)`}>
+      {vacationLabel(v)}
+      <button aria-label={`Delete vacation ${v.from} – ${v.to}`} title="Delete vacation" onClick={onDelete}>
+        ×
+      </button>
+    </span>
+  );
 }
 
-function VacationsCard({
+function MemberRow({
+  username,
+  user,
   vacations,
-  onVacations,
-  teams,
+  onRemove,
+  onAddVacation,
+  onDeleteVacation,
 }: {
+  username: string;
+  /** undefined = loading, null = not found in Jira. */
+  user: JiraUser | null | undefined;
   vacations: Vacation[];
-  onVacations: (v: Vacation[] | null) => void;
-  teams: TeamsConfig;
+  onRemove: () => void;
+  onAddVacation: (from: string, to: string) => void;
+  onDeleteVacation: (v: Vacation) => void;
 }) {
-  const users = teams.teams.flatMap((t) => t.users).sort((a, b) => a.localeCompare(b));
-  const [form, setForm] = useState({ user: "", from: "", to: "" });
-  const [errors, setErrors] = useState<string[]>([]);
-  const [message, setMessage] = useState("");
+  const [adding, setAdding] = useState(false);
+  const [range, setRange] = useState({ from: "", to: "" });
+  const [error, setError] = useState("");
 
-  const add = (e: FormEvent) => {
+  const submit = (e: FormEvent) => {
     e.preventDefault();
-    setMessage("");
-    const problems = [];
-    if (!form.user) problems.push("Choose an employee.");
-    if (!form.from || !form.to) problems.push("Set both dates.");
-    else if (form.to < form.from) problems.push("The end date is before the start date.");
-    setErrors(problems);
-    if (problems.length) return;
-    onVacations(sortVacations([...vacations, { user: form.user, from: form.from, to: form.to }]));
-    setForm({ ...form, from: "", to: "" });
-    setMessage(`Added a vacation for ${form.user}.`);
+    if (!range.from || !range.to) return setError("Set both dates.");
+    if (range.to < range.from) return setError("The end date is before the start date.");
+    onAddVacation(range.from, range.to);
+    setRange({ from: "", to: "" });
+    setError("");
+    setAdding(false);
   };
 
-  const inTeams = new Set(users.map((u) => u.toLowerCase()));
   return (
-    <section className="card">
-      <h2>Vacations</h2>
-      <p className="muted">
-        Vacation working days are shown in green and excluded from the norm in Total. Kept in this browser; share them
-        with the configuration file.
-      </p>
-      <form className="vacation-form" onSubmit={add}>
-        <select value={form.user} onChange={(e) => setForm({ ...form, user: e.target.value })}>
-          <option value="">Employee…</option>
-          {users.map((u) => (
-            <option key={u} value={u}>
-              {u}
-            </option>
-          ))}
-        </select>
-        <input type="date" value={form.from} onChange={(e) => setForm({ ...form, from: e.target.value, to: form.to || e.target.value })} />
-        <input type="date" value={form.to} min={form.from || undefined} onChange={(e) => setForm({ ...form, to: e.target.value })} />
-        <button type="submit" className="primary">
-          Add
-        </button>
-      </form>
-      {message && <p className="ok">{message}</p>}
-      <ErrorList errors={errors} />
-      {vacations.length ? (
-        <div className="table-scroll">
-        <table className="matrix vacations-table">
-          <thead>
-            <tr>
-              <th className="left">Employee</th>
-              <th className="left">From</th>
-              <th className="left">To</th>
-              <th>Working days</th>
-              <th />
-            </tr>
-          </thead>
-          <tbody>
-            {vacations.map((v, i) => (
-              <tr key={`${v.user}-${v.from}-${i}`}>
-                <td className="left">
-                  {v.user}
-                  {!inTeams.has(v.user.toLowerCase()) && <span className="chip">not in team config</span>}
-                </td>
-                <td className="left">{v.from}</td>
-                <td className="left">{v.to}</td>
-                <td className="num">{workingDays(v)}</td>
-                <td>
-                  <button
-                    className="icon-btn small"
-                    title="Delete"
-                    aria-label={`Delete vacation of ${v.user} from ${v.from}`}
-                    onClick={() => onVacations(vacations.filter((_, j) => j !== i))}
-                  >
-                    ×
-                  </button>
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-        </div>
-      ) : (
-        <p className="muted">No vacations yet.</p>
-      )}
-    </section>
+    <li className="member">
+      <span className="member-name">
+        {user === undefined ? (
+          <span className="muted">{username}</span>
+        ) : user === null ? (
+          <>
+            {username} <span className="chip warn-chip">not found in Jira</span>
+          </>
+        ) : (
+          <>
+            {user.displayName} <span className="muted">{username}</span>
+            {!user.active && <span className="chip">inactive</span>}
+          </>
+        )}
+      </span>
+      <span className="vacations">
+        {vacations.map((v) => (
+          <VacationChip key={`${v.from}-${v.to}`} v={v} onDelete={() => onDeleteVacation(v)} />
+        ))}
+        {adding ? (
+          <form className="vacation-inline" onSubmit={submit}>
+            <input
+              type="date"
+              aria-label="Vacation from"
+              value={range.from}
+              onChange={(e) => setRange({ from: e.target.value, to: range.to || e.target.value })}
+            />
+            <input
+              type="date"
+              aria-label="Vacation to"
+              min={range.from || undefined}
+              value={range.to}
+              onChange={(e) => setRange({ ...range, to: e.target.value })}
+            />
+            <button type="submit" className="primary">
+              Add
+            </button>
+            <button type="button" onClick={() => (setAdding(false), setError(""))}>
+              Cancel
+            </button>
+            {error && <span className="error-text">{error}</span>}
+          </form>
+        ) : (
+          <button className="link-btn" onClick={() => setAdding(true)}>
+            + vacation
+          </button>
+        )}
+      </span>
+      <button className="icon-btn small" title="Remove from team" aria-label={`Remove ${username} from team`} onClick={onRemove}>
+        ×
+      </button>
+    </li>
   );
 }
 

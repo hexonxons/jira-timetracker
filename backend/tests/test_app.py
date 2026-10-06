@@ -80,6 +80,8 @@ def fake_jira(request: httpx.Request) -> httpx.Response:
         return httpx.Response(200, json=[{"id": "customfield_1", "name": "SD Track"}])
     if path == "/rest/api/2/user":
         name = request.url.params["username"]
+        if name == "ghost":
+            return httpx.Response(404)
         return httpx.Response(200, json={"name": name, "displayName": name.title()})
     if path == "/rest/api/2/search":
         issue = {"key": "SDS-1", "fields": {"summary": "x", "customfield_1": None}}
@@ -135,3 +137,20 @@ def test_report_uses_instance_teams_or_the_ones_sent(service, jira):
 
 def test_unknown_report_is_404(service):
     assert service.get("/api/reports/nope").status_code == 404
+
+
+def test_lookup_users_returns_display_names_and_nulls(service, jira):
+    r = service.post("/api/users/lookup", json={"usernames": ["alice", " alice ", "ghost", ""]})
+    assert r.status_code == 200, r.text
+    assert r.json() == {
+        "users": {
+            "alice": {"username": "alice", "displayName": "Alice", "active": True},
+            "ghost": None,
+        }
+    }
+    assert jira[0].pat == "secret-pat"
+
+
+def test_lookup_users_limit(service, jira):
+    r = service.post("/api/users/lookup", json={"usernames": [f"u{i}" for i in range(501)]})
+    assert r.status_code == 400

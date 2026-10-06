@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import hashlib
 import json
 import os
@@ -96,6 +97,42 @@ def validate_teams(config: Any = Body(None)) -> dict[str, Any]:
     except TeamsConfigError as exc:
         raise fail(exc.errors)
     return {"teams": [{"name": t.name, "users": list(t.users)} for t in teams]}
+
+
+class UsersLookup(BaseModel):
+    usernames: list[str]
+
+
+MAX_LOOKUP = 500
+
+
+@app.post("/api/users/lookup")
+async def lookup_users(request: UsersLookup) -> dict[str, Any]:
+    """Display names of Jira users by username; null for usernames Jira does not know."""
+    settings = load_settings()
+    require_connection(settings)
+    names = list(dict.fromkeys(u.strip() for u in request.usernames if u.strip()))
+    if len(names) > MAX_LOOKUP:
+        raise fail([f"At most {MAX_LOOKUP} usernames per request."])
+    semaphore = asyncio.Semaphore(8)
+
+    async def one(client: JiraClient, username: str) -> tuple[str, dict[str, Any] | None]:
+        async with semaphore:
+            user = await client.user(username)
+        if user is None:
+            return username, None
+        return username, {
+            "username": user.get("name") or username,
+            "displayName": user.get("displayName") or username,
+            "active": user.get("active", True),
+        }
+
+    try:
+        async with make_client(settings) as client:
+            found = await asyncio.gather(*(one(client, u) for u in names))
+    except (JiraError, OSError) as exc:
+        raise fail([f"Cannot look up users in Jira: {exc}"])
+    return {"users": dict(found)}
 
 
 # --- report jobs -----------------------------------------------------------------
