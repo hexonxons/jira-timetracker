@@ -408,7 +408,7 @@ function TeamsCard({
           <button type="submit">Add team</button>
         </form>
         {orphanVacations.length > 0 && (
-          <div className="team-block">
+          <div className="team-block wide">
             <div className="team-head">
               <strong>Vacations of people not in any team</strong>
             </div>

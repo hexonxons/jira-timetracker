@@ -838,10 +838,29 @@ table {
 
 
 /* Settings: team editor, vacations, highlighting */
+/* Team blocks three per row; the add-team form and orphan vacations span the whole row. */
 .team-editor {
   display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 10px;
   margin-top: 8px;
+}
+
+.team-editor > form,
+.team-editor > .team-block.wide {
+  grid-column: 1 / -1;
+}
+
+@media (max-width: 1100px) {
+  .team-editor {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 700px) {
+  .team-editor {
+    grid-template-columns: minmax(0, 1fr);
+  }
 }
 
 .team-block {
@@ -973,11 +992,30 @@ pre.format {
 
 .member {
   display: grid;
-  grid-template-columns: minmax(180px, 280px) 1fr auto;
+  grid-template-columns: minmax(0, 1fr) auto;
   align-items: center;
-  gap: 8px;
+  column-gap: 8px;
+  row-gap: 2px;
   padding: 4px 0;
   border-bottom: 1px solid var(--border);
+}
+
+.member .vacations {
+  grid-column: 1 / -1;
+  grid-row: 2;
+}
+
+.member-name {
+  overflow-wrap: anywhere;
+}
+
+.team-block .inline-form {
+  display: flex;
+}
+
+.team-block .inline-form input {
+  flex: 1;
+  min-width: 0;
 }
 
 .member:last-child {
@@ -1046,12 +1084,3 @@ pre.format {
   color: var(--error);
 }
 
-@media (max-width: 700px) {
-  .member {
-    grid-template-columns: 1fr auto;
-  }
-  .member .vacations {
-    grid-column: 1 / -1;
-    grid-row: 2;
-  }
-}
