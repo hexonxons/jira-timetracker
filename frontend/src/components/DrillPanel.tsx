@@ -9,6 +9,8 @@ export interface DrillTarget {
   path: string[];
   /** A single day, or undefined for the whole period. */
   date?: string;
+  /** Label of a multi-day column (a week or month), when the target is one. */
+  periodLabel?: string;
   entries: Entry[];
   /** Offer grouping by day first (summary cells and row totals). */
   allowByDay?: boolean;
@@ -54,7 +56,7 @@ export function DrillPanel({
         <div>
           <div className="drill-path">{target.path.join(" › ") || "All"}</div>
           <div className="drill-sub">
-            {target.date ? formatLongDate(target.date) : "Whole period"}
+            {target.date ? formatLongDate(target.date) : (target.periodLabel ?? "Whole period")}
             {people === 1 && target.entries[0] && !target.path.includes(target.entries[0].member.displayName)
               ? ` · ${target.entries[0].member.displayName}`
               : ""}

@@ -1,6 +1,7 @@
 import { useCallback, useMemo, useRef, useState, type CSSProperties, type PointerEvent } from "react";
 import { buildTree, dailyTotals, idsToDepth, sumSeconds, type Dim, type Entry, type RowNode } from "../lib/aggregate";
-import { todayIso, type DayColumn } from "../lib/calendar";
+import { todayIso } from "../lib/calendar";
+import { columnValue, type Column, type ColumnMode } from "../lib/columns";
 import { formatValue, type Unit } from "../lib/format";
 import { dayMark, normDays, rangeLabel, type DayMark, type DayRange } from "../lib/highlight";
 import { isOnVacation, type VacationDays } from "../lib/vacations";
@@ -49,7 +50,9 @@ const DIM_NAMES: Record<Dim, string> = { team: "Teams", employee: "Employees", t
 export function CalendarReport({
   dataset,
   entries,
-  days,
+  columns,
+  columnMode,
+  onColumnModeChange,
   dims,
   defaultDepth,
   hoursPerPersonDay,
@@ -60,7 +63,9 @@ export function CalendarReport({
 }: {
   dataset: Dataset;
   entries: Entry[];
-  days: DayColumn[];
+  columns: Column[];
+  columnMode: ColumnMode;
+  onColumnModeChange: (m: ColumnMode) => void;
   dims: Dim[];
   defaultDepth: number;
   hoursPerPersonDay: number;
@@ -78,8 +83,9 @@ export function CalendarReport({
    * Employee cells: vacation (green) in every view; red outside the allowed daily range only
    * where the employee row holds the person's whole day.
    */
-  const markOf = (n: RowNode, d: DayColumn, seconds: number): DayMark => {
-    if (n.dim !== "employee" || !n.member) return null;
+  const markOf = (n: RowNode, c: Column, seconds: number): DayMark => {
+    const d = c.day; // daily highlighting only in single-day columns
+    if (!d || n.dim !== "employee" || !n.member) return null;
     const vacation = isOnVacation(vacations, n.member.username, d.date);
     const mark = dayMark({ date: d.date, weekend: d.weekend, today, seconds, vacation, range });
     return mark === "vacation" || employeeHasWholeDay ? mark : null;
@@ -135,11 +141,19 @@ export function CalendarReport({
   const teamNode = (n: RowNode) => teamOf.get(n.path[0]);
   const grandTotal = sumSeconds(entries);
 
-  const open = (node: RowNode | null, date?: string) => {
+  const open = (node: RowNode | null, col?: Column) => {
     const base = node ? node.entries : entries;
-    const list = date ? base.filter((e) => e.date === date) : base;
+    const dates = col ? new Set(col.dates) : null;
+    const list = dates ? base.filter((e) => dates.has(e.date)) : base;
     if (!list.length) return;
-    setDrill({ path: node ? node.path : [], date, entries: list, allowByDay: !date });
+    const single = col?.dates.length === 1 ? col.dates[0] : undefined;
+    setDrill({
+      path: node ? node.path : [],
+      date: single,
+      periodLabel: col && !single ? `${col.label} ${col.sub}` : undefined,
+      entries: list,
+      allowByDay: !single,
+    });
   };
 
   return (
@@ -153,14 +167,27 @@ export function CalendarReport({
             </button>
           ))}
         </div>
+        <span className="muted">Columns:</span>
+        <div className="segmented small">
+          {(["day", "week", "month"] as const).map((m) => (
+            <button key={m} className={columnMode === m ? "on" : ""} onClick={() => onColumnModeChange(m)}>
+              {m === "day" ? "Days" : m === "week" ? "Weeks" : "Months"}
+            </button>
+          ))}
+        </div>
         <UnitToggle unit={unit} onChange={onUnitChange} hoursPerPersonDay={hoursPerPersonDay} />
         <span className="legend">
           {employeeHasWholeDay && (
             <>
-              <span className="swatch short" /> {rangeLabel(range)} a day; Total below the norm
+              <span className="swatch short" />
+              {columnMode === "day" ? `${rangeLabel(range)} a day; ` : ""}Total below the norm
             </>
           )}
-          <span className="swatch vacation" /> vacation
+          {columnMode === "day" && (
+            <>
+              <span className="swatch vacation" /> vacation
+            </>
+          )}
         </span>
       </div>
       <div className="calendar-wrap" style={{ "--label-width": `${labelWidth.width}px` } as CSSProperties}>
@@ -177,10 +204,10 @@ export function CalendarReport({
                   {...labelWidth.handle}
                 />
               </th>
-              {days.map((d) => (
-                <th key={d.date} className={`day ${d.weekend ? "weekend" : ""} ${d.weekStart ? "week-start" : ""}`}>
-                  <div className="dow">{d.weekday}</div>
-                  <div>{d.label}</div>
+              {columns.map((c) => (
+                <th key={c.key} className={`day ${c.weekend ? "weekend" : ""} ${c.boundary ? "week-start" : ""}`}>
+                  <div className="dow">{c.sub}</div>
+                  <div className="nowrap">{c.label}</div>
                 </th>
               ))}
               <th className="total-col">Total</th>
@@ -214,16 +241,17 @@ export function CalendarReport({
                       )}
                     </div>
                   </th>
-                  {days.map((d) => {
-                    const v = n.byDay.get(d.date) ?? 0;
+                  {columns.map((c) => {
+                    const v = columnValue(n.byDay, c);
+                    const mark = markOf(n, c, v);
                     return (
                       <td
-                        key={d.date}
-                        className={`cell ${d.weekend ? "weekend" : ""} ${d.weekStart ? "week-start" : ""} ${v ? "has" : ""} ${markClass[String(markOf(n, d, v))] ?? ""}`}
-                        title={markTitle(markOf(n, d, v), v)}
-                        onClick={v ? () => open(n, d.date) : undefined}
+                        key={c.key}
+                        className={`cell ${c.weekend ? "weekend" : ""} ${c.boundary ? "week-start" : ""} ${v ? "has" : ""} ${markClass[String(mark)] ?? ""}`}
+                        title={markTitle(mark, v)}
+                        onClick={v ? () => open(n, c) : undefined}
                       >
-                        {fmt(v, teamNode(n)?.byDay.get(d.date))}
+                        {fmt(v, columnValue(teamNode(n)?.byDay, c))}
                       </td>
                     );
                   })}
@@ -241,13 +269,13 @@ export function CalendarReport({
           <tfoot>
             <tr>
               <th className="sticky-col row-label">Total</th>
-              {days.map((d) => {
-                const v = totals.get(d.date) ?? 0;
+              {columns.map((c) => {
+                const v = columnValue(totals, c);
                 return (
                   <td
-                    key={d.date}
-                    className={`cell ${d.weekend ? "weekend" : ""} ${d.weekStart ? "week-start" : ""} ${v ? "has" : ""}`}
-                    onClick={v ? () => open(null, d.date) : undefined}
+                    key={c.key}
+                    className={`cell ${c.weekend ? "weekend" : ""} ${c.boundary ? "week-start" : ""} ${v ? "has" : ""}`}
+                    onClick={v ? () => open(null, c) : undefined}
                   >
                     {fmt(v, v)}
                   </td>

@@ -128,8 +128,22 @@ async def test_failed_worklog_request_fails_whole_report():
 async def test_period_validation():
     with pytest.raises(ReportError):
         await load([Team("A", ("a",))], start=date(2026, 9, 2), end=date(2026, 9, 1))
-    with pytest.raises(ReportError):
-        await load([Team("A", ("a",))], start=date(2026, 9, 1), end=date(2026, 10, 15))
+
+
+@respx.mock
+async def test_long_periods_are_allowed():
+    mock_jira(
+        users={"alice": "Alice"},
+        issues={"SDS-1": {"summary": "x", FIELD: None}},
+        worklogs={
+            "SDS-1": [
+                wl(1, "alice", "2025-01-02T10:00:00.000+0300", 3600),
+                wl(2, "alice", "2026-12-30T10:00:00.000+0300", 3600),
+            ]
+        },
+    )
+    ds = await load([Team("A", ("alice",))], start=date(2025, 1, 1), end=date(2026, 12, 31))
+    assert [w["date"] for w in ds["worklogs"]] == ["2025-01-02", "2026-12-30"]
 
 
 def test_jql_escapes_usernames():

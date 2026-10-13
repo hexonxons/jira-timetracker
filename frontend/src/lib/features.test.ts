@@ -114,3 +114,41 @@ describe("workspace file", () => {
     expect(instanceDefaults(null)).toEqual({ vacations: null, highlight: null });
   });
 });
+
+import { buildColumns, columnValue, defaultColumnMode } from "./columns";
+
+describe("calendar columns", () => {
+  it("picks days, weeks or months by period length", () => {
+    expect(defaultColumnMode("2026-09-01", "2026-09-30")).toBe("day");
+    expect(defaultColumnMode("2026-07-01", "2026-09-30")).toBe("week");
+    expect(defaultColumnMode("2026-01-01", "2026-12-31")).toBe("month");
+  });
+
+  it("groups into ISO weeks clipped to the period", () => {
+    const weeks = buildColumns("2026-09-01", "2026-10-04", new Set(), "week");
+    expect(weeks.map((w) => [w.label, w.sub, w.dates.length])).toEqual([
+      ["Sep 1–6", "W36", 6],
+      ["Sep 7–13", "W37", 7],
+      ["Sep 14–20", "W38", 7],
+      ["Sep 21–27", "W39", 7],
+      ["Sep 28 – Oct 4", "W40", 7],
+    ]);
+  });
+
+  it("groups into months and sums values over a column", () => {
+    const months = buildColumns("2025-12-15", "2026-02-10", new Set(), "month");
+    expect(months.map((m) => [m.label, m.sub, m.dates.length, m.boundary])).toEqual([
+      ["Dec", "2025", 17, false],
+      ["Jan", "2026", 31, true],
+      ["Feb", "2026", 10, false],
+    ]);
+    const byDay = new Map([["2026-01-05", 3600], ["2026-01-31", 1800], ["2026-02-01", 60]]);
+    expect(columnValue(byDay, months[1])).toBe(5400);
+  });
+
+  it("keeps day columns with their day info", () => {
+    const days = buildColumns("2026-09-01", "2026-09-07", new Set(), "day");
+    expect(days).toHaveLength(5);
+    expect(days[0].day?.weekday).toBe("Tue");
+  });
+});

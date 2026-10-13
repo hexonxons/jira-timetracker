@@ -3,7 +3,7 @@ import { api, ApiError, type PublicSettings, type ReportJob } from "./api";
 import { CalendarReport } from "./components/CalendarReport";
 import { ErrorList } from "./components/ErrorList";
 import { enrich, type Dim } from "./lib/aggregate";
-import { visibleDays } from "./lib/calendar";
+import { buildColumns, defaultColumnMode, type ColumnMode } from "./lib/columns";
 import { UNITS, type Unit } from "./lib/format";
 import type { DayRange } from "./lib/highlight";
 import { readPref, removePref, writePref } from "./lib/prefs";
@@ -140,9 +140,20 @@ export function App() {
   }
 
   const entries = useMemo(() => (dataset ? enrich(dataset) : []), [dataset]);
-  const days = useMemo(
-    () => (dataset ? visibleDays(dataset.meta.start, dataset.meta.end, new Set(entries.map((e) => e.date))) : []),
-    [dataset, entries],
+  // Columns: days for short periods, weeks / months for long ones; reset with every new report.
+  const [modeChoice, setModeChoice] = useState<{ report: string; mode: ColumnMode } | null>(null);
+  const columnMode: ColumnMode = !dataset
+    ? "day"
+    : modeChoice?.report === dataset.meta.generatedAt
+      ? modeChoice.mode
+      : defaultColumnMode(dataset.meta.start, dataset.meta.end);
+  const setColumnMode = (mode: ColumnMode) => dataset && setModeChoice({ report: dataset.meta.generatedAt, mode });
+  const columns = useMemo(
+    () =>
+      dataset
+        ? buildColumns(dataset.meta.start, dataset.meta.end, new Set(entries.map((e) => e.date)), columnMode)
+        : [],
+    [dataset, entries, columnMode],
   );
   const hpd = settings?.hoursPerPersonDay ?? dataset?.meta.hoursPerPersonDay ?? 8;
   const defaults = useMemo(() => instanceDefaults(settings?.teamsConfig), [settings]);
@@ -244,7 +255,9 @@ export function App() {
                 key={`${page}-${dataset.meta.generatedAt}`}
                 dataset={dataset}
                 entries={entries}
-                days={days}
+                columns={columns}
+                columnMode={columnMode}
+                onColumnModeChange={setColumnMode}
                 dims={view.dims}
                 defaultDepth={view.defaultDepth}
                 hoursPerPersonDay={hpd}

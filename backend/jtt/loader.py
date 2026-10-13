@@ -14,7 +14,6 @@ from typing import Any
 from .jira import JiraClient, JiraError
 from .teams import Team
 
-MAX_PERIOD_DAYS = 31
 USERS_PER_JQL = 50
 SEARCH_PAGE_SIZE = 500
 WORKLOG_PAGE_SIZE = 1000
@@ -34,9 +33,6 @@ class ReportError(Exception):
 def validate_period(start: date, end: date) -> None:
     if end < start:
         raise ReportError(["End date is before start date."])
-    days = (end - start).days + 1
-    if days > MAX_PERIOD_DAYS:
-        raise ReportError([f"Period is {days} days long; at most {MAX_PERIOD_DAYS} days are supported."])
 
 
 def jql_string(value: str) -> str:
