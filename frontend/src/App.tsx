@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { api, ApiError, type PublicSettings, type ReportJob } from "./api";
+import { api, ApiError, type Me, type PublicSettings, type ReportJob } from "./api";
 import { CalendarReport } from "./components/CalendarReport";
 import { ErrorList } from "./components/ErrorList";
 import { enrich, type Dim } from "./lib/aggregate";
@@ -68,6 +68,7 @@ function monthBounds(offset = 0): { start: string; end: string } {
 export function App() {
   const [page, setPage] = useState(currentPage);
   const [settings, setSettings] = useState<PublicSettings | null>(null);
+  const [me, setMe] = useState<Me | null>(null);
   const [period, setPeriod] = useState(() => monthBounds());
   const [job, setJob] = useState<ReportJob | null>(null);
   const [errors, setErrors] = useState<string[]>([]);
@@ -105,6 +106,10 @@ export function App() {
   useEffect(() => {
     const onHash = () => setPage(currentPage());
     window.addEventListener("hashchange", onHash);
+    api
+      .me()
+      .then(setMe)
+      .catch(() => setMe(null));
     api
       .getSettings()
       .then(setSettings)
@@ -176,6 +181,12 @@ export function App() {
             </a>
           ))}
         </nav>
+        {me?.authEnabled && me.user && (
+          <div className="account">
+            <span title={me.user.email ?? me.user.username}>{me.user.name ?? me.user.username}</span>
+            <a href="/auth/logout">Sign out</a>
+          </div>
+        )}
       </header>
 
       {view.kind !== "settings" && (

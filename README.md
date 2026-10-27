@@ -40,7 +40,10 @@ docker build -t jira-timetracker .
 docker run -p 8080:8080 -e JTT_JIRA_URL=https://jira.company.com -e JTT_JIRA_PAT=... jira-timetracker
 ```
 
-Подробно — сборка за корпоративным прокси, все переменные, Docker Compose, Kubernetes, требования к облачной
+Вход пользователей — через SSO по OpenID Connect (Keycloak): переменные `JTT_OIDC_*`, без них сервис открыт
+всем, кто может до него достучаться.
+
+Подробно — SSO и настройка клиента в Keycloak, сборка за корпоративным прокси, все переменные, Docker Compose, Kubernetes, требования к облачной
 платформе и безопасность: [docs/DEPLOY.md](docs/DEPLOY.md).
 
 ## Как загружаются данные

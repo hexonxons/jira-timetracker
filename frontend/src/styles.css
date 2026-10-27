@@ -120,6 +120,19 @@ code {
   white-space: nowrap;
 }
 
+.account {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-left: auto;
+  white-space: nowrap;
+  color: var(--muted);
+}
+
+.account a {
+  color: var(--accent);
+}
+
 .topbar nav a.active {
   background: var(--accent-soft);
   color: var(--accent);

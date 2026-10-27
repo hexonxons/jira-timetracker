@@ -14,6 +14,8 @@ from typing import Any
 
 DEFAULT_SD_TRACK_FIELD_NAME = "SD Track"
 DEFAULT_HOURS_PER_PERSON_DAY = 8.0
+DEFAULT_OIDC_SCOPES = "openid profile email"
+DEFAULT_SESSION_HOURS = 8.0
 
 
 @dataclass
@@ -27,6 +29,22 @@ class Settings:
     # Default team configuration of the instance; users may send their own with a report request.
     teams_config: dict[str, Any] | None = None
     config_errors: list[str] = field(default_factory=list)
+    # Single sign-on through OpenID Connect (Keycloak); off unless an issuer or client is set.
+    oidc_issuer: str = ""
+    oidc_client_id: str = ""
+    oidc_client_secret: str = ""
+    oidc_scopes: str = DEFAULT_OIDC_SCOPES
+    # Realm roles, client roles or groups, any of which lets a user in; empty = any signed-in user.
+    oidc_allowed_roles: list[str] = field(default_factory=list)
+    # Address users open the service at; empty = taken from the request.
+    public_url: str = ""
+    session_secret: str = ""
+    session_hours: float = DEFAULT_SESSION_HOURS
+    oidc_errors: list[str] = field(default_factory=list)
+
+    @property
+    def oidc_enabled(self) -> bool:
+        return bool(self.oidc_issuer or self.oidc_client_id)
 
     @property
     def base_url(self) -> str:
@@ -41,6 +59,7 @@ class Settings:
             "sdTrackFieldName": self.sd_track_field_name,
             "hoursPerPersonDay": self.hours_per_person_day,
             "teamsConfig": self.teams_config,
+            "authEnabled": self.oidc_enabled,
         }
 
 
@@ -93,5 +112,45 @@ def load_settings() -> Settings:
         errors.append(f"JTT_TEAMS_FILE: cannot read {teams_file}: {exc.strerror}")
     except json.JSONDecodeError as exc:
         errors.append(f"Default team config is not valid JSON: {exc}")
+    load_oidc(settings, errors)
     settings.config_errors = errors
     return settings
+
+
+def load_oidc(settings: Settings, errors: list[str]) -> None:
+    oidc_errors: list[str] = []
+    settings.oidc_issuer = _env("JTT_OIDC_ISSUER")
+    settings.oidc_client_id = _env("JTT_OIDC_CLIENT_ID")
+    settings.oidc_client_secret = _secret("JTT_OIDC_CLIENT_SECRET", oidc_errors)
+    settings.oidc_scopes = _env("JTT_OIDC_SCOPES") or DEFAULT_OIDC_SCOPES
+    settings.oidc_allowed_roles = [r.strip() for r in _env("JTT_OIDC_ALLOWED_ROLES").split(",") if r.strip()]
+    settings.public_url = _env("JTT_PUBLIC_URL").rstrip("/")
+    settings.session_secret = _secret("JTT_SESSION_SECRET", oidc_errors)
+    if not settings.oidc_enabled:
+        errors.extend(oidc_errors)
+        return
+    if not settings.oidc_issuer:
+        oidc_errors.append("JTT_OIDC_ISSUER is not set.")
+    elif not settings.oidc_issuer.startswith(("http://", "https://")):
+        oidc_errors.append("JTT_OIDC_ISSUER must start with http:// or https://.")
+    if not settings.oidc_client_id:
+        oidc_errors.append("JTT_OIDC_CLIENT_ID is not set.")
+    if not settings.oidc_client_secret:
+        oidc_errors.append("JTT_OIDC_CLIENT_SECRET (or JTT_OIDC_CLIENT_SECRET_FILE) is not set.")
+    if "openid" not in settings.oidc_scopes.split():
+        oidc_errors.append("JTT_OIDC_SCOPES must include openid.")
+    if settings.public_url and not settings.public_url.startswith(("http://", "https://")):
+        oidc_errors.append("JTT_PUBLIC_URL must start with http:// or https://.")
+    if settings.session_secret and len(settings.session_secret) < 32:
+        oidc_errors.append("JTT_SESSION_SECRET must be at least 32 characters.")
+    hours = _env("JTT_SESSION_HOURS")
+    if hours:
+        try:
+            settings.session_hours = float(hours)
+            if not 0 < settings.session_hours <= 24 * 30:
+                raise ValueError
+        except ValueError:
+            oidc_errors.append("JTT_SESSION_HOURS must be a number of hours between 0 and 720.")
+            settings.session_hours = DEFAULT_SESSION_HOURS
+    settings.oidc_errors = oidc_errors
+    errors.extend(oidc_errors)

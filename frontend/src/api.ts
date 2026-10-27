@@ -18,6 +18,11 @@ async function call<T>(method: string, url: string, body?: unknown): Promise<T> 
     throw new ApiError(["Cannot reach the local backend. Is it running?"]);
   }
   const data = await response.json().catch(() => null);
+  if (response.status === 401 && typeof data?.detail?.login === "string") {
+    // The sign-in session has ended: go through the identity provider and come back here.
+    const next = window.location.pathname + window.location.search + window.location.hash;
+    window.location.assign(`${data.detail.login}?next=${encodeURIComponent(next)}`);
+  }
   if (!response.ok) {
     const errors = data?.detail?.errors;
     throw new ApiError(Array.isArray(errors) ? errors : [`HTTP ${response.status}`]);
@@ -33,6 +38,12 @@ export interface PublicSettings {
   sdTrackFieldName: string;
   hoursPerPersonDay: number;
   teamsConfig: unknown;
+  authEnabled: boolean;
+}
+
+export interface Me {
+  authEnabled: boolean;
+  user: { username: string; name: string | null; email: string | null } | null;
 }
 
 export interface TeamsSummary {
@@ -60,6 +71,7 @@ export interface JiraUser {
 }
 
 export const api = {
+  me: () => call<Me>("GET", "/api/me"),
   lookupUsers: (usernames: string[]) =>
     call<{ users: Record<string, JiraUser | null> }>("POST", "/api/users/lookup", { usernames }),
   getSettings: () => call<PublicSettings>("GET", "/api/settings"),

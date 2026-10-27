@@ -12,11 +12,12 @@ from pathlib import Path
 from typing import Any
 
 import truststore
-from fastapi import Body, FastAPI, HTTPException
-from fastapi.responses import FileResponse
+from fastapi import Body, FastAPI, HTTPException, Request
+from fastapi.responses import FileResponse, Response
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
+from . import auth
 from .jira import JiraClient, JiraError
 from .jobs import JobRegistry
 from .loader import ReportError, build_dataset, find_field, validate_period
@@ -46,6 +47,59 @@ def fail(errors: list[str], status: int = 400) -> HTTPException:
 def require_connection(settings: Settings) -> None:
     if settings.config_errors:
         raise fail([f"Instance configuration: {e}" for e in settings.config_errors])
+
+
+@app.middleware("http")
+async def require_sign_in(request: Request, call_next):
+    refused = auth.guard(load_settings(), request)
+    return refused if refused is not None else await call_next(request)
+
+
+# --- sign-in (OpenID Connect) ----------------------------------------------------
+
+
+def sign_in_settings() -> Settings:
+    settings = load_settings()
+    if not settings.oidc_enabled:
+        raise HTTPException(404)
+    return settings
+
+
+@app.get("/auth/login", include_in_schema=False)
+async def login(request: Request, next: str | None = None) -> Response:
+    settings = sign_in_settings()
+    if settings.oidc_errors:
+        return auth.error_page("; ".join(settings.oidc_errors), 503)
+    try:
+        return await auth.login(settings, request, next)
+    except auth.AuthError as exc:
+        return auth.error_page(str(exc), 502)
+
+
+@app.get("/auth/callback", include_in_schema=False)
+async def callback(request: Request) -> Response:
+    settings = sign_in_settings()
+    if settings.oidc_errors:
+        return auth.error_page("; ".join(settings.oidc_errors), 503)
+    try:
+        return await auth.callback(settings, request)
+    except auth.AuthError as exc:
+        return auth.error_page(str(exc))
+
+
+@app.get("/auth/logout", include_in_schema=False)
+async def logout(request: Request) -> Response:
+    return await auth.logout(sign_in_settings(), request)
+
+
+@app.get("/api/me")
+def me(request: Request) -> dict[str, Any]:
+    settings = load_settings()
+    user = auth.current_user(settings, request) if settings.oidc_enabled else None
+    return {
+        "authEnabled": settings.oidc_enabled,
+        "user": None if user is None else {k: user.get(k) for k in ("username", "name", "email")},
+    }
 
 
 @app.get("/healthz", include_in_schema=False)
@@ -205,6 +259,6 @@ if (FRONTEND_DIST / "index.html").is_file():
 
     @app.get("/{path:path}", include_in_schema=False)
     def spa(path: str) -> FileResponse:
-        if path.startswith("api/"):
+        if path.startswith(("api/", "auth/")):
             raise HTTPException(404)
         return FileResponse(FRONTEND_DIST / "index.html")

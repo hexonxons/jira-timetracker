@@ -7,6 +7,9 @@ metadata:
 type: Opaque
 stringData:
   jira-pat: "REPLACE_WITH_PAT"
+  # For sign-in through Keycloak (see the commented JTT_OIDC_* variables below):
+  # oidc-client-secret: "REPLACE_WITH_CLIENT_SECRET"
+  # session-secret: "REPLACE_WITH_openssl_rand_-base64_48"
 ---
 apiVersion: v1
 kind: ConfigMap
@@ -46,6 +49,12 @@ spec:
             - { name: JTT_JIRA_URL, value: "https://jira.example.com" }
             - { name: JTT_JIRA_PAT_FILE, value: /secrets/jira-pat }
             - { name: JTT_TEAMS_FILE, value: /config/teams.json }
+            # - { name: JTT_PUBLIC_URL, value: "https://timereports.example.com" }
+            # - { name: JTT_OIDC_ISSUER, value: "https://sso.example.com/realms/corp" }
+            # - { name: JTT_OIDC_CLIENT_ID, value: jira-timetracker }
+            # - { name: JTT_OIDC_CLIENT_SECRET_FILE, value: /secrets/oidc-client-secret }
+            # - { name: JTT_OIDC_ALLOWED_ROLES, value: jtt-user }
+            # - { name: JTT_SESSION_SECRET_FILE, value: /secrets/session-secret }
           volumeMounts:
             - { name: secrets, mountPath: /secrets, readOnly: true }
             - { name: teams, mountPath: /config, readOnly: true }

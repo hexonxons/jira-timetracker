@@ -16,11 +16,25 @@ services:
       # JTT_CA_BUNDLE: /config/corp-ca.pem
       # JTT_MAX_PARALLEL_REPORTS: "3"
       # JTT_REPORT_CACHE_SECONDS: "0"
+      # Sign-in through Keycloak (docs/DEPLOY.md); put the client secret into deploy/oidc-client-secret.txt,
+      # the session key into deploy/session-secret.txt, and uncomment both secrets below and under jtt.
+      # JTT_PUBLIC_URL: https://timereports.example.com
+      # JTT_OIDC_ISSUER: https://sso.example.com/realms/corp
+      # JTT_OIDC_CLIENT_ID: jira-timetracker
+      # JTT_OIDC_CLIENT_SECRET_FILE: /run/secrets/oidc_client_secret
+      # JTT_OIDC_ALLOWED_ROLES: jtt-user
+      # JTT_SESSION_SECRET_FILE: /run/secrets/session_secret
     volumes:
       - ./teams.json:/config/teams.json:ro
     secrets:
       - jira_pat
+      # - oidc_client_secret
+      # - session_secret
 
 secrets:
   jira_pat:
     file: ./jira-pat.txt
+  # oidc_client_secret:
+  #   file: ./oidc-client-secret.txt
+  # session_secret:
+  #   file: ./session-secret.txt

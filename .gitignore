@@ -8,4 +8,6 @@ frontend/dist/
 .DS_Store
 deploy/jira-pat.txt
 deploy/teams.json
+deploy/oidc-client-secret.txt
+deploy/session-secret.txt
 windows-roots.pem

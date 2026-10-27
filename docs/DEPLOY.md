@@ -1,18 +1,20 @@
 # Развёртывание как сервиса
 
 Сервис — один Docker-контейнер: backend на Python отдаёт API и собранный интерфейс на порту `8080`. В Jira он
-ходит от имени **одного общего Personal Access Token**, который задаётся конфигурацией инстанса. Авторизации
-пользователей пока нет.
+ходит от имени **одного общего Personal Access Token**, который задаётся конфигурацией инстанса. Пользователи
+входят через корпоративный SSO по OpenID Connect (Keycloak), если он настроен (см. [Вход через SSO](#вход-через-sso-openid-connect-keycloak)).
 
 ```
 браузеры ──HTTP──▶ контейнер jira-timetracker :8080 ──HTTPS + общий PAT──▶ Jira Data Center
+                          └──HTTPS (OIDC)──▶ Keycloak
 ```
 
 ## Прежде чем открывать доступ
 
-- **Нет авторизации.** Любой, кто может открыть адрес сервиса, видит всё, что видит владелец PAT: списанное время,
-  задачи и комментарии к worklogs. Публикуйте сервис только во внутренней сети или VPN, либо поставьте перед ним
-  прокси с корпоративным SSO (oauth2-proxy, auth в ingress-контроллере, Identity-Aware Proxy облака).
+- **Включите SSO.** Без `JTT_OIDC_*` любой, кто может открыть адрес сервиса, видит всё, что видит владелец PAT:
+  списанное время, задачи и комментарии к worklogs. Настройте вход через Keycloak (см. ниже) или публикуйте сервис
+  только во внутренней сети / VPN. Вошедший пользователь видит то же, что и все: права в Jira по-прежнему
+  определяет общий PAT, а SSO решает лишь, кого пускать (`JTT_OIDC_ALLOWED_ROLES`).
 - **Токен не покидает сервер.** В браузер уходит только признак «токен задан». Менять настройки из браузера
   нельзя: API для этого просто нет. Иначе любой посетитель мог бы подменить URL Jira и увести токен.
 - **Технический пользователь.** Выпустите PAT для отдельной учётной записи Jira с правом только на чтение нужных
@@ -144,6 +146,15 @@ docker build --no-cache --secret id=ca_bundle,src=windows-roots.pem -t jira-time
 | `JTT_MAX_PARALLEL_REPORTS` | нет | Сколько отчётов одновременно загружаются из Jira, по умолчанию `3`. Остальные ждут в очереди |
 | `JTT_REPORT_CACHE_SECONDS` | нет | Сколько секунд отдавать готовый отчёт повторно на идентичный запрос, по умолчанию `0` (каждый раз свежая загрузка) |
 | `PORT` | нет | Порт HTTP, по умолчанию `8080` |
+| `JTT_OIDC_ISSUER` | для SSO | Issuer OpenID Connect, для Keycloak `https://sso.company.com/realms/<realm>` |
+| `JTT_OIDC_CLIENT_ID` | для SSO | Client ID клиента в Keycloak |
+| `JTT_OIDC_CLIENT_SECRET` | для SSO, или `..._FILE` | Client secret (confidential client) |
+| `JTT_OIDC_CLIENT_SECRET_FILE` |  | Путь к файлу с client secret |
+| `JTT_OIDC_ALLOWED_ROLES` | нет | Через запятую: realm-роли, роли клиента или группы Keycloak, любая из которых даёт доступ. Пусто — пускать любого пользователя realm |
+| `JTT_OIDC_SCOPES` | нет | По умолчанию `openid profile email` |
+| `JTT_PUBLIC_URL` | желательно для SSO | Адрес, по которому пользователи открывают сервис, например `https://timereports.company.com`. Из него строится redirect URI. Без него адрес берётся из запроса, что за обратным прокси часто даёт `http://` и внутренний хост |
+| `JTT_SESSION_SECRET` | нет, или `..._FILE` | Ключ подписи cookie сессии, не короче 32 символов. Без него ключ случайный на процесс, и после перезапуска всем придётся войти заново |
+| `JTT_SESSION_HOURS` | нет | Срок сессии в часах, по умолчанию `8` |
 
 Ошибки конфигурации (нет токена, битый JSON команд, файл не найден) видны на `/healthz`, на странице Settings
 и в самом отчёте. Сервис при этом стартует, чтобы их можно было увидеть.
@@ -169,6 +180,45 @@ docker build --no-cache --secret id=ca_bundle,src=windows-roots.pem -t jira-time
 каждый может редактировать команды и отпуска, менять подсветку и загружать / выгружать этот же файл. Свои
 настройки хранятся только в браузере пользователя (команды уходят на сервер вместе с запросом отчёта и нигде не
 сохраняются); «Reset to instance defaults» возвращает настройки инстанса.
+
+## Вход через SSO (OpenID Connect, Keycloak)
+
+SSO включается, как только задан `JTT_OIDC_ISSUER` или `JTT_OIDC_CLIENT_ID`. Тогда без входа открываются только
+`/healthz` и сам вход (`/auth/*`): интерфейс перенаправляет на Keycloak, API отвечает `401`. Если настройки SSO
+неполные (например, нет client secret), сервис **не** становится открытым, а отвечает `503` с описанием ошибки —
+её же видно на `/healthz`.
+
+Как это работает: Authorization Code Flow с PKCE. Код обменивается на токены самим backend’ом по проверенному TLS,
+после чего проверяются `iss`, `aud`, `exp` и `nonce` ID-токена. Сессия — подписанная HMAC cookie `jtt_session`
+(`HttpOnly`, `SameSite=Lax`, `Secure` при `https://` в `JTT_PUBLIC_URL`); на сервере ничего не хранится, поэтому
+файловая система по-прежнему может быть только для чтения. «Sign out» завершает и сессию сервиса, и сессию Keycloak.
+
+### Клиент в Keycloak
+
+1. Realm → Clients → Create client: тип **OpenID Connect**, Client ID, например `jira-timetracker`.
+2. **Client authentication: On** (confidential), Authentication flow: только **Standard flow**.
+3. **Valid redirect URIs:** `https://timereports.company.com/auth/callback`;
+   **Valid post logout redirect URIs:** `https://timereports.company.com/`; **Web origins:** `+`.
+4. Advanced → **Proof Key for Code Exchange Code Challenge Method: S256** (необязательно, но рекомендуется).
+5. Credentials → скопируйте Client secret в секрет, на который указывает `JTT_OIDC_CLIENT_SECRET_FILE`.
+6. Ограничение доступа (необязательно): создайте роль клиента или realm-роль, например `jtt-user`, выдайте её
+   нужным пользователям или группам и укажите `JTT_OIDC_ALLOWED_ROLES=jtt-user`. Realm-роли и роли клиента
+   Keycloak кладёт в access token по умолчанию. Чтобы проверять **группы**, добавьте в dedicated scope клиента
+   mapper *Group Membership* с именем claim `groups` и укажите группы в `JTT_OIDC_ALLOWED_ROLES` (с `/` или без).
+
+```bash
+docker run ... \
+  -e JTT_PUBLIC_URL=https://timereports.company.com \
+  -e JTT_OIDC_ISSUER=https://sso.company.com/realms/corp \
+  -e JTT_OIDC_CLIENT_ID=jira-timetracker \
+  -e JTT_OIDC_CLIENT_SECRET_FILE=/secrets/oidc-client-secret \
+  -e JTT_OIDC_ALLOWED_ROLES=jtt-user \
+  -e JTT_SESSION_SECRET_FILE=/secrets/session-secret \
+  ...
+```
+
+Ключ сессии: `openssl rand -base64 48 > session-secret.txt`. Контейнер должен достучаться до Keycloak (discovery
+и token endpoint); корпоративный CA для этих запросов задаётся тем же `JTT_CA_BUNDLE`, что и для Jira.
 
 ## Запуск
 
@@ -207,7 +257,8 @@ Deployment, Service. Перед применением замените обра
 kubectl apply -f deploy/kubernetes.yaml
 ```
 
-Доступ снаружи настраивается через Ingress вашего кластера, вместе с аутентификацией (см. выше). Токен лучше
+Доступ снаружи настраивается через Ingress вашего кластера; вход — через SSO (см. выше, в манифесте есть
+закомментированные переменные `JTT_OIDC_*`). Токен лучше
 хранить во внешнем менеджере секретов (Vault, External Secrets, Sealed Secrets), а не в манифесте.
 
 ### Облачные платформы контейнеров
@@ -226,6 +277,7 @@ App Service / Container Apps, ECS и т. п. Два требования:
 
 - **Проверка здоровья:** `GET /healthz` → `{"status": "ok", "configErrors": []}`.
 - **Логи:** access-лог uvicorn в stdout. Токен в логи не пишется.
+- **Обновление и сессии:** с заданным `JTT_SESSION_SECRET` пользователи остаются в системе после перезапуска.
 - **Ресурсы:** ~40–60 МБ памяти в работе. Каждый загруженный отчёт держится в памяти 30 минут (до 50 отчётов);
   отчёт за месяц на 100 человек — единицы мегабайт. Лимита 1 ГБ хватает с запасом.
 - **Нагрузка на Jira:** один отчёт делает до 8 параллельных запросов; одновременно грузится не больше
